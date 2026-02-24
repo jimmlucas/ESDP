@@ -1,0 +1,99 @@
+########################################
+# Git
+########################################
+.git
+.gitignore
+.gitattributes
+
+########################################
+# Python caches / artifacts
+########################################
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+*.log
+
+########################################
+# Virtual envs
+########################################
+.venv/
+venv/
+env/
+ENV/
+
+########################################
+# IDE / editor
+########################################
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+########################################
+# OS
+########################################
+.DS_Store
+Thumbs.db
+
+########################################
+# Data (do not bake datasets into the image)
+########################################
+data/
+*.csv
+*.tsv
+*.parquet
+
+########################################
+# Logs (runtime)
+########################################
+logs/
+
+########################################
+# Large reports / traces (SPECIFIC files, NOT *.txt)
+########################################
+DVT_*
+*.html
+*.png
+*.jpg
+*.jpeg
+*.svg
+DVT_trace.txt
+DVT_timeline.txt
+eda_summary.txt
+
+########################################
+# Models: ignore everything except the production model artifact
+########################################
+models/*
+!models/best_model_pipeline.pkl
+
+########################################
+# Docs (optional - keep out of image)
+########################################
+README.md
+DOCKER.md
+SWAGGER.md
+docs/
+
+########################################
+# CI/CD
+########################################
+.github/
+.gitlab-ci.yml
+.travis.yml
+
+########################################
+# Scripts (training/analysis - not needed in production image)
+########################################
+run_pipeline.sh
+1_csv_merge.py
+2_exploratory_analysis.py
+3_feature_engineering.py
+4_label_optimal_round.py
+5_train_models.py
+8_evaluate_models.py

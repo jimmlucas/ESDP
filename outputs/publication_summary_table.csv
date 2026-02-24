@@ -1,0 +1,9 @@
+Metric,Value
+CPU Hours Saved (mean ± 95% CI),"0.54 [0.24, 0.84]h"
+CPU Reduction % (mean ± 95% CI),"40.00 [17.67, 66.67]%"
+QV Loss (mean ± 95% CI),"-0.0160 [-0.0577, 0.0257]"
+BUSCO Loss % (mean ± 95% CI),"5.54 [0.09, 11.00]%"
+Efficiency Gain % (mean ± 95% CI),"186.03 [51.49, 317.08]%"
+Samples with Zero QV Loss,8 / 9 (88.9%)
+Samples with Acceptable Loss,6 / 9 (66.7%)
+Statistical Significance (vs R1),p=0.1250 ns

@@ -1,0 +1,25 @@
+============================================================
+EXPLORATORY DATA ANALYSIS SUMMARY
+============================================================
+
+Total Rows: 805
+Unique Samples: 41
+Unique Genera: 9
+Rounds: [1, 2, 3, 4, 5]
+Coverage Groups: ['10X', '20X', '40X', 'FULL']
+qv_mean: 12.086771545428196
+qv_std: 1.9960587647251617
+qv_min: 8.775576920952071
+qv_max: 17.579279030004592
+error_rate_mean: 0.06779706436024845
+error_rate_std: 0.026480892002134177
+error_rate_min: 0.01746112
+error_rate_max: 0.1325691
+busco_complete_mean: 72.42049689440994
+busco_complete_std: 22.918895281989894
+busco_complete_min: 10.3
+busco_complete_max: 99.1
+n50_mean: 3723062.196273292
+n50_std: 2192690.187500127
+n50_min: 17651
+n50_max: 7794130

@@ -1,0 +1,16 @@
+{
+  "sample_id": null,
+  "recommended_rounds": 1,
+  "confidence": 0.5180014455857829,
+  "reasoning": "ML model predicts Late (R5). R1 quality excellent (QV=35.2, BUSCO=95.5%). Recommend 1 rounds.",
+  "model_version": "1.0.0",
+  "warnings": [
+    "R1 quality excellent: early stop recommended"
+  ],
+  "predicted_class": 3,
+  "class_probabilities": {
+    "1": 0.1233724382640963,
+    "2": 0.35862610869954026,
+    "3": 0.5180014455857829
+  }
+}

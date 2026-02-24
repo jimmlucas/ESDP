@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  esdp-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: esdp:latest
+    container_name: esdp-api
+    ports:
+      - "8000:8000"
+    environment:
+      - MODEL_PATH=/app/models/best_model_pipeline.pkl
+      - LOG_LEVEL=INFO
+      - WORKERS=4
+      - PORT=8000
+    volumes:
+      # Optional override in local dev: mounts over the baked-in model
+      - ./models:/app/models:ro
+      - ./logs:/app/logs
+    restart: unless-stopped
+
+    # Security hardening (optional but professional)
+    read_only: true
+    tmpfs:
+      - /tmp
+
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5).read()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+    networks:
+      - esdp-network
+
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+
+networks:
+  esdp-network:
+    driver: bridge

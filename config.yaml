@@ -1,0 +1,169 @@
+# Configuration for Oxford Nanopore Polishing Decision Tool
+# ==========================================================
+
+# Data paths
+data:
+  input_csv: "data/all_samples_polishing_metrics.csv"
+  merged_csv: "data/all_samples_polishing_metrics.csv"
+  labeled_csv: "data/training_dataset_with_target.csv"
+  engineered_csv: "data/training_dataset_engineered.csv"
+
+# Class Configuration (CRITICAL IMPROVEMENT: 3-class system)
+classes:
+  n_classes: 3
+  class_mapping:
+    1: "Early (R1-R2)"  # Stop early: rounds 1-2
+    2: "Medium (R3-R4)"  # Stop mid-way: rounds 3-4
+    3: "Late (R5)"      # Continue to end: round 5
+  
+  # Original to new class mapping
+  original_to_new:
+    1: 1  # Early
+    2: 1  # Early
+    3: 2  # Medium
+    4: 2  # Medium
+    5: 3  # Late
+
+# R1 Quality Thresholds (for early stopping consideration)
+r1_thresholds:
+  min_busco: 95.0           # Minimum BUSCO complete %
+  max_assembly_error: 0.02  # Maximum |assembly_frac - 1.0|
+  max_error_rate: 0.07      # Maximum error rate
+  max_contigs: null         # Maximum contigs (null = ignore)
+  min_coverage_est: 8.0     # Minimum coverage estimate
+  max_align_err_cons: 0.15  # Maximum alignment error in consensus
+
+# Stability Thresholds (for R1 stability check)
+stability:
+  eps_qv: 0.05              # QV tolerance
+  eps_error: 0.0005         # Error rate tolerance
+  eps_busco: 1.0            # BUSCO tolerance
+  eps_assembly_frac: 0.01   # Assembly fraction tolerance
+  use_assembly_frac: false  # Whether to include assembly_frac in stability
+
+# Plateau Detection
+plateau:
+  relative_threshold: 0.12  # 12% of max improvement
+
+# Feature Engineering
+features:
+  # Base features from data
+  base:
+    - n50
+    - qv
+    - error_rate
+    - busco_complete
+    - busco_fragmented
+    - busco_missing
+    - assembly_frac
+    - assembly_error
+    - num_contigs
+    - total_length
+  
+  # Ratio features (NEW)
+  ratios:
+    - qv_per_round
+    - busco_per_round
+    - improvement_rate
+    - cost_benefit_ratio
+  
+  # Trend features (NEW)
+  trends:
+    - delta_qv
+    - delta_busco
+    - delta_error
+    - delta_assembly
+    - score_improvement
+  
+  # Cumulative features
+  cumulative:
+    - gain_cum
+    - plateau_streak
+  
+  # Normalized to R1 (NEW)
+  normalized_r1:
+    - qv_from_r1
+    - busco_complete_from_r1
+    - error_rate_from_r1
+    - assembly_frac_from_r1
+
+# Model Training Configuration
+models:
+  random_state: 42
+  test_size: 0.20
+  cv_folds: 5
+  
+  # XGBoost Configuration
+  xgboost:
+    n_estimators: 500
+    max_depth: 6
+    learning_rate: 0.05
+    subsample: 0.8
+    colsample_bytree: 0.8
+    min_child_weight: 3
+    gamma: 0.1
+    reg_alpha: 0.1
+    reg_lambda: 1.0
+  
+  # Random Forest Configuration
+  random_forest:
+    n_estimators: 800
+    max_depth: 12
+    min_samples_leaf: 2
+    max_features: "sqrt"
+  
+  # Ordinal Regression Configuration
+  ordinal_regression:
+    alpha: 1.0
+
+# Imbalance Handling
+imbalance:
+  use_smote: true
+  smote_k_neighbors: 3
+  smote_sampling_strategy: "auto"
+  
+  # Class weights
+  class_weights:
+    1: 2.0   # Early - boost minority
+    2: 1.5   # Medium
+    3: 1.0   # Late - most common
+
+# Evaluation Metrics
+evaluation:
+  primary_metric: "balanced_accuracy"
+  target_metrics:
+    balanced_accuracy: 0.65
+    macro_f1: 0.60
+    min_class_recall: 0.40
+    mae: 0.5
+    qwk: 0.50
+
+# Hierarchical Policy (3-class version)
+hierarchical:
+  stage_a:
+    # Binary: Early (1) vs Continue (2-3)
+    threshold: 0.5
+    model: "logistic_regression"
+  
+  stage_b:
+    # Binary: Medium (2) vs Late (3)
+    model: "random_forest"
+
+# Post-processing Rules
+postprocessing:
+  conservative_bias: true  # Prefer one extra round over stopping too early
+  smooth_predictions: true # Avoid large jumps in predictions
+  use_domain_rules: true   # Apply r1_ok and stability rules
+
+# Output Configuration
+outputs:
+  models_dir: "models/"
+  results_dir: "outputs/"
+  plots_dir: "outputs/plots/"
+  logs_dir: "logs/"
+
+# Logging
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "logs/pipeline.log"
