@@ -50,7 +50,7 @@ COPY --chown=esdp:esdp docker-entrypoint.sh .
 # Copy the model INTO the image for portability (Nextflow)
 COPY --chown=esdp:esdp models/best_model_pipeline.pkl ./models/
 
-# Eliminamos la línea problemática (feature_names.txt no es necesario)
+# Delete the lines that is not necessary
 
 RUN chmod +x /app/docker-entrypoint.sh
 

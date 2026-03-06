@@ -1,23 +1,28 @@
-# ONT-Polishing-Optimizer
+---
+title: "README"
+output: github_document
+---
 
-### Machine Learning-Based Early Stopping for Oxford Nanopore Bacterial Genome Polishing 
+# ESDP
 
+### A Decision Framework for Resource-Efficient Bacterial Genome Polishing
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![Status](https://img.shields.io/badge/status-active-success.svg)]()
 [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.XXXXXXX-blue)]()
-[![Paper](https://img.shields.io/badge/paper-BMC%20Bioinformatics-orange)]()
+[![Paper](https://img.shields.io/badge/paper-under%20preparation-orange)]()
 
-> **Stop polishing when it matters, not when it's scheduled**
+> **Stop polishing when it matters, not when it is scheduled**
 
 ---
 
-**Note**: This tool is for research purposes. Always validate predictions with field expertise before making decisions.
+**Note:** This tool is intended for research use and decision support. Predictions should be interpreted alongside assembly-quality metrics and domain expertise.
 
 ---
 
 **Version: 1.0**
+
 ---
 
 ## Table of Contents
@@ -31,469 +36,262 @@
   - [Key Features](#key-features)
   - [Performance Highlights](#performance-highlights)
   - [Model Details](#model-details)
-  - [Citation](#citation)
-  - [Acknowledgments](#acknowledgments)
-  - [Contact](#contact)
-  - [License](#license)
-  - [Future Improvements](#future-improvements)
-  - [References](#references)
+- [Citation](#citation)
+- [Acknowledgments](#acknowledgments)
+- [Contact](#contact)
+- [License](#license)
+- [Future Improvements](#future-improvements)
+- [References](#references)
 
 ---
+
 ## Overview
 
-Oxford Nanopore sequencing produces long reads that enable high-quality genome assemblies. However, standard polishing pipelines typically run a fixed number of Racon rounds (e.g. 4–5) regardless of whether early rounds already yield near-optimal assemblies.
+ESDP is a machine learning-based decision framework for Oxford Nanopore bacterial genome polishing. Instead of always running a fixed number of polishing rounds, ESDP uses early polishing and assembly-quality signals to recommend whether a sample can stop early, continue to an intermediate stage, or proceed to the full polishing schedule.
 
-**This leads to:**
+The repository includes:
 
-- Unnecessary compute time and cost (redundant polishing rounds)
-- No curate way to decide when to stop
-- Poor support for "early-stop" scenarios in current tooling
+- a full data-processing and model-training pipeline
+- feature engineering and target relabeling for a three-class stopping task
+- formal evaluation against naive baselines
+- resource benchmarking and sensitivity analysis
+- a command-line interface for workflow integration
+- a FastAPI service for online inference
+- Docker and Docker Compose support for reproducible deployment
 
-**This tool uses machine learning** to predict the optimal stopping strategy (early / medium / late) based on assembly quality metrics from early polishing rounds, **reducing computational cost while maintaining assembly quality**.
-
----
 ### Problem Statement
----
-**Original challenge:**
 
-- 5-class optimal-round problem (rounds 1–5) with strong class imbalance
-- Highly skewed label distribution:
-  - **Class 5** (late, round 5) ≈ **89 groups**
-  - **Class 1** (early, round 1) ≈ **7 groups**
-- Baseline performance with direct 5-class prediction:
-  - Balanced Accuracy: ~0.41–0.54
-  - Macro F1: ~0.40–0.50
-- **Critical issue**: at least one intermediate class had ~0% recall in early models
+Iterative polishing is a standard step in long-read bacterial genome assembly, but most practical workflows still apply a **fixed number of rounds**, commonly five, regardless of whether quality has already stabilized. This creates three problems:
 
----
+- **Computational inefficiency:** assemblies that converge early continue consuming CPU time unnecessarily.
+- **Limited decision support:** standard polishing workflows do not provide a principled recommendation of when to stop.
+- **Workflow rigidity:** fixed-round execution prevents adaptive resource allocation across samples with different quality profiles.
+
 ### Our Solution
----
-- Reformulate the problem as a **3-class ordinal decision**:
-  - **Early** (rounds 1–2)
-  - **Medium** (rounds 3–4)
-  - **Late** (round 5)
-- Advanced feature engineering with **40+ derived features** capturing dynamics across rounds
-- Multiple model families:
-  - XGBoost, Random Forest, Ordinal Regression, Ensembles
-- Imbalance handling:
-  - SMOTE, class weights
-- Stratified Group K-Fold splits at the **polishing group** level (`Sample` × `Coverage`)
+
+ESDP addresses this by learning **data-driven stopping decisions** from polishing trajectories. The current system predicts a **three-class stopping recommendation** derived from the original five-round formulation:
+
+| Class | Recommendation | Original rounds | Interpretation |
+|:---:|---|:---:|---|
+| 1 | Early | 1-2 | assembly reaches acceptable quality quickly |
+| 2 | Medium | 3-4 | additional polishing is useful but full execution may be unnecessary |
+| 3 | Late | 5 | full polishing schedule is recommended |
+
+This formulation reduces sparsity in the original five-round problem and provides a more stable and operationally useful decision target.
 
 ---
 
 ## Key Features
 
-### 3-Class System (Core Design)
+### 1. Three-class stopping system
 
-Instead of predicting exact rounds (1–5), the tool predicts **stopping strategies**:
+Instead of predicting an exact round from 1 to 5, ESDP predicts an **Early / Medium / Late** stopping recommendation. This design:
 
-| Class | Strategy | Original Rounds | Groups | Description                                  |
-|:-----:|----------|:---------------:|:------:|----------------------------------------------|
-| **1** | Early    | 1–2             | 31     | Stop early – assembly already high quality   |
-| **2** | Medium   | 3–4             | 41     | Stop mid-way – quality/cost trade-off        |
-| **3** | Late     | 5               | 89     | Continue to end – assembly needs more work   |
+- reduces confusion between adjacent rounds
+- improves class balance relative to the original five-class task
+- preserves the ordinal structure of the polishing process
+- maps naturally to practical workflow decisions
 
-**Why this works:**
-- Reduces confusion between adjacent rounds (R3 vs R4)
-- More balanced class distribution than original 5-class formulation
-- Ordinal relationship preserved (Early → Medium → Late)
+### 2. Feature engineering from polishing trajectories
 
-### Advanced Feature Engineering
+The pipeline derives features from assembly-quality metrics across polishing rounds, including:
 
-The pipeline derives [**40+ features**](#feature-groups) from per-round metrics:
+- base features such as `n50`, `qv`, `error_rate`, `busco_complete`, `assembly_frac`, `num_contigs`, and `total_length`
+- delta and improvement features such as `delta_qv`, `delta_busco_complete`, `delta_n50`, and `delta_error_rate`
+- normalized features relative to round 1 such as `qv_from_r1`, `n50_from_r1`, `error_rate_from_r1`, and `busco_complete_from_r1`
+- cumulative and trend features such as `delta_qv_cumsum`, `delta_busco_complete_cumsum`, `delta_qv_trend`, and `score_improvement_trend`
+- plateau-oriented indicators such as `is_plateau` and `plateau_streak`
+- domain-specific summary features such as `completeness_score`, `assembly_quality`, and `polishing_effectiveness`
+- Flye-derived coverage features such as `coverage_est`, `mean_edge_coverage`, and `align_err_consensus`
 
-#### Delta Features (Round-to-Round Changes)
-- Captures improvement velocity between rounds
+### 3. Multiple model families
 
-#### Ratio Features
-- QV improvement rate
-- BUSCO per contig
-- Cost–benefit ratios
-- Efficiency metrics
+The training pipeline evaluates several model families:
 
-#### R1-Normalized Features
-- All metrics relative to polishing round 1
-- Enables comparison across samples with different baselines
-
-#### Domain-Specific Features
-- **Completeness Score**: Combines BUSCO, error rate, contiguity
-- **Assembly Quality Score**: Weighted combination of N50, assembly fraction, contig count
-- **R1 Quality Indicators**: Early stopping feasibility flags
-
-#### Cumulative Features
-- Running sums of improvements across rounds
-- Cumulative gains tracking
-
-#### Plateau Detection Features
-- Indicators of diminishing returns in QV, BUSCO, and error rate
-- Automatically detects when polishing is no longer beneficial
-
-### Multiple ML Models
-
-The training pipeline includes:
-
-1. **XGBoost** 
-   - Gradient boosting with class weights
-   - Excellent with heterogeneous and imbalanced data
-   - Tuned for the 3-class ordinal decision
-
+1. **XGBoost**
 2. **Random Forest**
-   - Robust baseline with interpretable feature importance
-   - 800 trees with controlled depth
-   - Less prone to overfitting
+3. **Ordinal Regression**
+4. **Soft-voting Ensemble**
 
-3. **Ordinal Regression (LogisticAT)** 
-   - Respects the natural order between Early/Medium/Late
-   - Threshold-based approach
-   - Optimized for ordinal outcomes
+The reference run included in this repository selected **Random Forest** as the best-performing model on the held-out sample-level test split.
 
-4. **Ensemble** 
-   - Voting classifier combining multiple models
-   - Reduces variance and improves robustness
-   - “Best of both worlds” between XGBoost and RF
+### 4. Conservative decision logic for online use
 
-### Comprehensive Evaluation
+Offline predictions are complemented by a decision layer that supports operational deployment, including:
 
-#### Classification Metrics
-- **Accuracy**
-- **Balanced Accuracy** (class-imbalance aware)
-- **Macro F1-Score** (equal weight for all classes)
-- Per-class precision, recall, F1
+- confidence-aware conservative bias
+- optional force-conservative behavior
+- domain-specific rule overrides
+- transparent probabilities and reasoning in the final response
 
-#### Ordinal Metrics
-- **Mean Absolute Error (MAE)** in class index
-- **Accuracy within ±1 class**
-- **Quadratic Weighted Kappa (QWK)**
+### 5. Deployable interfaces
 
-#### Visual Outputs
-- Confusion matrices
-- Feature importance plots
-- Practical impact plots (rounds saved vs quality retained)
-- Performance stratified by genus and coverage
+ESDP can be used in different ways:
+
+- **CLI** for local execution and workflow integration
+- **FastAPI REST service** for online inference
+- **Docker / Docker Compose** for reproducible deployment
+- **tests and structured logging** for more reliable operational use
 
 ---
 
 ## Performance Highlights
 
-### Model Performance (3-Class System)
+### Dataset Statistics
 
-The dataset used in this repository was 805 rows, 161 groups, the **best model (XGBoost)** achieves on the held-out test set:
+The reference dataset included in this repository contains:
 
+- **805 rows** in the final training table
+- **41 bacterial samples**
+- **161 sample-coverage groups**
+- **5 original polishing rounds**
+- **3 stopping classes** after relabeling
 
-| Metric            | Value  | Description                           |
-|-------------------|--------|---------------------------------------|
-| **Accuracy**      | 0.661  | Overall accuracy                      |
-| **Balanced Accuracy** | **0.635** | Class-imbalance aware accuracy |
-| **Macro F1-Score**| 0.627  | Average F1 across all classes         |
-| **MAE**           | 0.388  | Average class distance error          |
-| **Accuracy ±1**   | 0.952  | Predictions within 1 class            |
-| **QWK**           | 0.600  | Quadratic Weighted Kappa              |
-| **Early Recall**  | 0.543  | Correctly identified early stops      |
+### Model Performance
+
+In the reference run, the **best model was Random Forest**.
+
+| Metric | Value |
+|---|---:|
+| Accuracy | 0.629 |
+| Balanced Accuracy | 0.592 |
+| Macro F1 | 0.568 |
+| MAE | 0.482 |
+| Accuracy within one class | 0.888 |
+| Quadratic Weighted Kappa | 0.561 |
+
+Formal baseline comparison:
+
+| Model | Balanced accuracy | Macro F1 | MAE | QWK |
+|---|---:|---:|---:|---:|
+| Best model | 0.592 | 0.568 | 0.482 | 0.561 |
+| Always late baseline | 0.333 | 0.231 | 0.735 | 0.000 |
+| QV threshold baseline | 0.333 | 0.231 | 0.735 | 0.000 |
+| R1-only Random Forest | 0.566 | 0.571 | 0.465 | 0.538 |
 
 ### Practical Impact
 
-| Metric | Value | Impact |
-|--------|-------|--------|
-| **Computational Time Saved** | **46.7%** | 4.0h vs 7.5h per sample |
-| **Quality Retained** | **93.9%** | Only 6.1% quality loss |
-| **Avg Rounds Recommended** | **2.67** | vs 5 rounds maximum |
-| **Savings for 100 Genomes** | **350 hours** | CPU time saved |
+Compared with a fixed five-round baseline, the reference ESDP benchmark reported:
 
-### Dataset Statistics
+| Metric | Value |
+|---|---:|
+| CPU reduction | 44.71% |
+| Mean CPU saved per trajectory | 0.60 h |
+| Mean QV loss | -0.0038 |
+| Mean BUSCO loss | -0.51% |
+| Efficiency gain | 200.17% |
+| Zero QV loss trajectories | 33 / 34 |
+| Acceptable-loss trajectories | 34 / 34 |
 
-- **805 observations** (valid polishing rounds)
-- **161 unique groups** (samples × coverage combinations)
-- **9 bacterial genera**: *Acinetobacter*, *Corynebacterium*, *Enterococcus*, *Escherichia*, *Klebsiella*, *Pseudomonas*, *Salmonella*, *Staphylococcus*, *Streptococcus*
-- **3 coverage levels**: 10×, 20×, 40×
-- **5 polishing rounds** evaluated per sample
-
-
-**Summary statistics:**
-- Average time saved: **46.7%** (4.0h vs 7.5h per sample)
-- Average quality retained: **93.9%**
-- Recommended rounds: **2.67** (vs 5 maximum)
+These results indicate that ESDP can reduce polishing cost substantially while largely preserving assembly quality.
 
 ---
 
 ## Model Details
 
-### Architecture
+### Training pipeline
 
-The tool uses an **assemble approach** combining multiple model families:
+The repository includes a complete end-to-end workflow:
 
-#### 1. XGBoost
+- `1_csv_merge.py`: merge and harmonize polishing metrics
+- `2_exploratory_analysis.py`: exploratory analysis and plots
+- `3_feature_engineering.py`: derived feature construction
+- `4_label_optimal_round.py`: optimal-round labeling and three-class conversion
+- `5_train_models.py`: multi-model training and model selection
+- `8_evaluate_models.py`: formal evaluation against baselines
+- `9_benchmark_resources.py`: quality-versus-cost benchmark
+- `10_sensitivity_analysis.py`: confidence-threshold analysis
 
-```python
-XGBClassifier(
-    n_estimators=500,
-    max_depth=6,
-    learning_rate=0.05,
-    subsample=0.8,
-    colsample_bytree=0.8,
-    min_child_weight=3,
-    gamma=0.1,
-    reg_alpha=0.1,
-    reg_lambda=1.0,
-    scale_pos_weight={1: 2.0, 2: 1.5, 3: 1.0},
-    random_state=42
-)
-```
+### Inference and serving
 
-**Why XGBoost:**
-- Handles class imbalance well with `scale_pos_weight`
-- Robust to feature scaling differences
-- Built-in feature importance
-- Fast training with GPU support
+- `7_inference_pipeline.py`: inference workflow
+- `esdp_decide.py`: final decision logic and conservative overrides
+- `esdp_cli.py`: command-line entry point
+- `api_service.py`: FastAPI service for online inference
 
-#### 2. Random Forest
+### Leakage control
 
-```python
-RandomForestClassifier(
-    n_estimators=800,
-    max_depth=12,
-    min_samples_leaf=2,
-    max_features='sqrt',
-    class_weight={1: 2.0, 2: 1.5, 3: 1.0},
-    random_state=42,
-    n_jobs=-1
-)
-```
+To avoid leakage between related observations, the reference split is performed at the **sample level**, not the row level. This prevents different rows from the same biological sample from being distributed across train and test partitions.
 
-**Why Random Forest:**
-- Less prone to overfitting than single trees
-- Good baseline performance
-- Interpretable feature importance
-- Handles non-linear relationships
+### Deployment-oriented components
 
-#### 3. Ordinal Regression (LogisticAT)
+The project includes:
 
-```python
-LogisticAT(alpha=1.0)
-```
-
-**Why Ordinal:**
-- Respects the natural order (Early < Medium < Late)
-- More sample-efficient for ordinal outcomes
-- Reduces confusion between adjacent classes
-- Theoretically motivated for this problem
-
-#### 4. Ensemble (Voting Classifier)
-
-```python
-VotingClassifier(
-    estimators=[
-        ('xgboost', xgb_model),
-        ('random_forest', rf_model)
-    ],
-    voting='soft',         # Use predicted probabilities
-    weights=[2, 1]         # XGBoost weighted higher
-)
-```
-
-**Why Ensemble:**
-- Combines strengths of multiple models
-- Reduces variance
-- More robust predictions
-- Higher confidence in unanimous votes
-
-### Feature Groups
-
-The 40+ features are organized into categories:
-
-<details><summary>Click to see complete feature list</summary>
-
-#### Base Features (13)
-- `n50`, `qv`, `error_rate`
-- `busco_complete`, `busco_fragmented`, `busco_missing`
-- `assembly_frac`, `assembly_error`
-- `num_contigs`, `total_length`
-- `coverage`, `genus_encoded`
-- `round`
-
-#### Delta Features (15)
-- `delta_qv_r1_r2`, `delta_busco_r1_r2`, `delta_error_r1_r2`
-- `delta_qv_r2_r3`, `delta_busco_r2_r3`, `delta_error_r2_r3`
-- ... (for each consecutive round pair)
-
-#### R1-Normalized Features (5)
-- `qv_from_r1` - (QV_current - QV_r1)
-- `busco_complete_from_r1`
-- `error_rate_from_r1`
-- `assembly_frac_from_r1`
-- `n50_from_r1`
-
-#### Ratio Features (6)
-- `qv_per_round` - QV improvement per round
-- `busco_per_round`
-- `improvement_rate` - Overall quality gain velocity
-- `cost_benefit_ratio` - Quality gain per computational unit
-- `busco_per_contig` - BUSCO completeness per contig
-- `error_reduction_rate`
-
-#### Domain-Specific Scores (3)
-- `completeness_score` - Weighted: 40% BUSCO + 30% error_rate + 30% N50
-- `assembly_quality_score` - Weighted: 40% N50 + 30% assembly_frac + 30% (1/contigs)
-- `r1_quality_flag` - Binary: Is R1 good enough for early stop?
-
-#### Plateau Indicators (3)
-- `plateau_qv` - Boolean: Has QV improvement stalled?
-- `plateau_busco` - Boolean: Has BUSCO improvement stalled?
-- `plateau_error` - Boolean: Has error rate improvement stalled?
-
-#### Cumulative Features (2)
-- `cumulative_qv_gain` - Sum of QV improvements up to current round
-- `cumulative_busco_gain` - Sum of BUSCO improvements
-
-</details>
-
-### Training Configuration
-
-```yaml
-# Cross-Validation (conceptual setup)
-cv_strategy: StratifiedGroupKFold
-cv_folds: 5
-grouping: (Sample, Coverage)
-
-# Train/Test Split
-test_size: 0.20
-stratify: optimal_rounds_3class
-random_state: 42
-
-# Class Balancing
-method: SMOTE + class_weights
-smote_k_neighbors: 3
-smote_sampling_strategy: "auto"
-class_weights: {1: 2.0, 2: 1.5, 3: 1.0}
-
-# Hyperparameter Tuning
-search_method: manual / grid search
-validation: 5-fold CV
-metric: balanced_accuracy
-```
-
-### Model Selection Criteria
-
-Best model selected based on:
-1. **Balanced Accuracy** (primary metric)
-2. **Macro F1-Score** (secondary)
-3. **Minimum class recall** (especially Early) as practical constraint
-4. **MAE** and **QWK** for ordinal consistency
+- `Dockerfile`
+- `docker-compose.yml`
+- `docker-entrypoint.sh`
+- `config.yaml`
+- `test/` for API, decision, and integration tests
+- `docs/` for installation, usage, and dataset-building guidance
 
 ---
 
-### Metrics
-On the reference dataset shipped with this project (805 rows, 161 groups), the default configuration yields:
-
-| Metric            | Value |
-| ----------------- | ----- |
-| Balanced Accuracy | 0.635 |
-| Macro F1          | 0.627 |
-| MAE               | 0.388 |
-| Accuracy ±1       | 0.952 |
-| QWK               | 0.600 |
-
-Small deviations are expected if library versions or random seeds differ.
-
----
-### Tools & Dependencies
-
-This project builds upon:
-- [Flye](https://github.com/mikolmogorov/Flye) -  assembler for single-molecule sequencing reads
-- [Racon](https://github.com/isovic/racon) - Genome polishing
-- [Medaka]() - ONT polish assemble
-- [QUAST](https://github.com/ablab/quast) - Assembly quality assessment
-- [BUSCO](https://busco.ezlab.org/) - Genome completeness
-- [XGBoost](https://xgboost.readthedocs.io/) - Gradient boosting
-- [scikit-learn](https://scikit-learn.org/) - Machine learning
-- [imbalanced-learn](https://imbalanced-learn.org/) - SMOTE implementation
-
----
 ## Citation
 
-If you use this tool in your research, please cite:
+If you use this repository, please cite the associated software release and manuscript when available.
 
 ```bibtex
-@software{ESDP-Early-Stop-Decision-Polishing,
-  author={Jimmy Lucas},
-  year={2025},
-  url={https://github.com/jimmlucas/ESDP-Early-Stop-Decision-Polishing}
+@software{esdp,
+  author = {Jimmy Lucas and collaborators},
+  title = {ESDP: A Decision Framework for Resource-Efficient Bacterial Genome Polishing},
+  year = {2026},
+  url = {https://github.com/jimmlucas/ESDP-Early-Stop-Decision-Polishing}
 }
 ```
+
 ---
 
 ## Acknowledgments
 
-We thank:
+We acknowledge:
 
-- **Oxford Nanopore Technologies** for long-read sequencing technology
-- **All reasearching groups** for publish data in **NCBI**
-- **The Racon team** for the excellent polishing tool
-- **QUAST and BUSCO developers** for assembly quality assessment tools
-- **scikit-learn and XGBoost communities** for ML frameworks
-- **All contributors** who helped improve this tool
+- the developers of **Racon**, **Medaka**, **Flye**, **QUAST**, and **BUSCO**
+- public data contributors and repositories that enabled dataset construction
+- the open-source communities behind **scikit-learn**, **XGBoost**, **FastAPI**, and related tools
 
 ---
 
 ## Contact
 
-### Maintainer
-- GitHub: [@jimmlycas](https://github.com/jimmlucas)
-- Website: [LinkedIn](https://www.linkedin.com/in/jimmlucas)
+**Jimmy Lucas**  
+ISGlobal, Barcelona Institute for Global Health, Barcelona, Spain  
+Email: `jimmy.lucas@isglobal.org`
 
-### Issues & Support
+Project issues and feature requests should be reported through the repository issue tracker.
 
-- **Bug Reports**: [GitHub Issues](https://github.com/jimmlucas/ESDP-Early-Stop-Decision-Polishing/issues)
-- **Feature Requests**: [GitHub Discussions](https://github.com/jimmlucas/ESDP-Early-Stop-Decision-Polishing/discussions)
-- **Questions**: [GitHub Discussions Q&A](https://github.com/jimmlucas/ESDP-Early-Stop-Decision-Polishing/discussions/categories/q-a)
-
-### Community
-
-- **GitHub**: [@AMRmicrobiology ](https://github.com/AMRmicrobiology)
 ---
+
 ## License
 
-This project is licensed under the MIT License - see LICENSE file for details.
+This project is distributed under the MIT License. See `LICENSE` for details.
 
 ---
-## Limitations
 
-1. **Small dataset**: Only 161 groups total
-2. **Genus imbalance**: Some genera underrepresented
-3. **Coverage dependency**: Performance varies by coverage
-4. **Feature availability**: Requires complete metrics
----
 ## Future Improvements
 
-1. **More data collection**: Improve model robustness
-2. **Transfer learning**: Pre-train on related tasks
-3. **Deep learning**: Try neural networks with more data
-4. **Active learning**: Prioritize labeling uncertain samples
-5. **Real-time prediction**: Deploy as web service
+Planned directions include:
+
+1. expanding the dataset across more taxa and coverage regimes
+2. improving calibration and threshold selection for online decisions
+3. extending benchmarking across additional polishing workflows
+4. refining deployment and monitoring components for production settings
+5. improving model robustness under limited or noisy input metrics
 
 ---
 
 ## References
 
-### Related Tools
+### Related tools
 
-- **[Racon](https://github.com/isovic/racon)** - Ultrafast consensus module for raw de novo genome assembly
-- **[Medaka](https://github.com/nanoporetech/medaka)** - Neural network-based polishing for ONT
-- **[Pilon](https://github.com/broadinstitute/pilon)** - Automated genome assembly improvement tool
-- **[QUAST](http://quast.sourceforge.net/)** - Quality assessment tool for genome assemblies
-- **[BUSCO](https://busco.ezlab.org/)** - Assessing genome assembly completeness
-- **[Flye](https://github.com/mikolmogorov/Flye)** -Assembler for single-molecule sequencing reads
+- **Racon**: ultrafast consensus for raw de novo genome assembly
+- **Medaka**: Oxford Nanopore consensus polishing
+- **Flye**: assembler for long and noisy reads
+- **QUAST**: quality assessment for genome assemblies
+- **BUSCO**: completeness assessment using conserved orthologs
 
----
+### Selected publications
 
-### Publications
----
-
-1. **Racon**: Vaser, R., Sović, I., Nagarajan, N., & Šikić, M. (2017). Fast and accurate de novo genome assembly from long uncorrected reads. *Genome Research*, 27(5), 737-746.
-
-2. **Medaka**: Oxford Nanopore Technologies. (2020). Medaka: Sequence correction provided by ONT Research.
-
-3. **BUSCO**: Simão, F. A., et al. (2015). BUSCO: assessing genome assembly and annotation completeness with single-copy orthologs. *Bioinformatics*, 31(19), 3210-3212.
-
-4. **Class Imbalance**: Chawla, N. V., et al. (2002). SMOTE: synthetic minority over-sampling technique. *Journal of Artificial Intelligence Research*, 16, 321-357.
-
-5. **Ordinal Classification**: Frank, E., & Hall, M. (2001). A simple approach to ordinal classification. *EMCL* 2001, 145-156.
+1. Vaser R, Sović I, Nagarajan N, Šikić M. Fast and accurate de novo genome assembly from long uncorrected reads. *Genome Research*. 2017.
+2. Simão FA, Waterhouse RM, Ioannidis P, Kriventseva EV, Zdobnov EM. BUSCO: assessing genome assembly and annotation completeness with single-copy orthologs. *Bioinformatics*. 2015.
+3. Chawla NV, Bowyer KW, Hall LO, Kegelmeyer WP. SMOTE: synthetic minority over-sampling technique. *Journal of Artificial Intelligence Research*. 2002.
+4. Frank E, Hall M. A simple approach to ordinal classification. *ECML*. 2001.
