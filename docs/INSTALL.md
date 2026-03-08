@@ -54,7 +54,7 @@ python -c "import sklearn, pandas, joblib; print('Installation successful')"
 <details>
 <summary>Click to see full dependency list</summary>
 
-```
+```text
 # Core libraries
 numpy>=1.20.0
 pandas>=1.3.0
@@ -75,6 +75,6 @@ plotly>=5.0.0
 # Optional
 shap>=0.40.0
 optuna>=2.10.0
-
 ```
+
 </details>
