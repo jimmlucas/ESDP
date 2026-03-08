@@ -23,10 +23,10 @@
 - [Build Dataset](docs/BUILD_DATASET.md)
 - [Usage](docs/USAGE.md)
 - [Overview](#overview)
-  - [Problem Formulation](#problem-formulation)
-  - [Key Features](#key-features)
-  - [Performance Highlights](#performance-highlights)
-  - [Model Details](#model-details)
+- [Problem Formulation](#problem-formulation)
+- [Key Features](#key-features)
+- [Performance Highlights](#performance-highlights)
+- [Model Details](#model-details)
 - [Tools & Dependencies](#tools--dependencies)
 - [Citation](#citation)
 - [Acknowledgments](#acknowledgments)
@@ -222,6 +222,7 @@ Across 34 valid test trajectories derived from 9 held-out samples, ESDP achieved
 These results indicate that ESDP can provide practical computational savings while preserving assembly quality in the evaluated benchmark setting.
 
 ---
+
 ## Model Details
 
 ### Final model
@@ -267,7 +268,7 @@ On the held-out test set, the final **Random Forest** model achieved:
 | **Accuracy ±1 class** | 0.888 |
 | **QWK** | 0.561 |
 
-Most residual errors occurred between adjacent stopping categories rather than as extreme misclassifications. Class-wise recall for the final Random Forest model was **0.822** for class 1, **0.286** for class 2, and **0.667** for class 3. 
+Most residual errors occurred between adjacent stopping categories rather than as extreme misclassifications. Class-wise recall for the final Random Forest model was **0.822** for class 1, **0.286** for class 2, and **0.667** for class 3.
 
 ### Baseline comparison
 
@@ -287,6 +288,7 @@ To assess practical value, ESDP was compared against three baseline decision str
 These comparisons show that ESDP clearly outperforms naive fixed or heuristic strategies, while also indicating that first-round signals already contain substantial predictive information. The full ESDP framework retained the best overall balanced accuracy and quadratic weighted kappa.
 
 ---
+
 ## Tools & Dependencies
 
 ESDP builds on the following core tools and libraries:
@@ -317,9 +319,11 @@ If you use ESDP in your research, please cite the software repository and, when 
   version      = {v1.0.2}
 }
 ```
+
 ---
 
 ## Acknowledgments
+
 We thank the bioinformatics community for the development and maintenance of the open-source software that
 supports this project, including Flye, Racon, Medaka, QUAST, BUSCO, scikit-learn, XGBoost, FastAPI, and Docker.
 We also acknowledge the NCBI Sequence Read Archive for providing public access to the sequencing datasets used to
@@ -330,6 +334,7 @@ construct the benchmark dataset.
 ## Contact
 
 ### Maintainer
+
 - GitHub: [@jimmlucas](https://github.com/jimmlucas)
 
 ### Issues & Support
@@ -340,13 +345,16 @@ construct the benchmark dataset.
 
 ### Community
 
-- **GitHub**: [@AMRmicrobiology ](https://github.com/AMRmicrobiology)
+- **GitHub**: [@AMRmicrobiology](https://github.com/AMRmicrobiology)
+
 ---
+
 ## License
 
 ESDP is released under the MIT License. See the LICENSE file for details.
 
 ---
+
 ## Limitations
 
 Current limitations of ESDP include:
@@ -357,6 +365,7 @@ Current limitations of ESDP include:
 4. ESDP requires the availability of the expected assembly-quality metrics and feature inputs used by the trained pipeline.
 
 ---
+
 ## Future Improvements
 
 Planned directions for future development include:
