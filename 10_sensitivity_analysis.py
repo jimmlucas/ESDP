@@ -45,6 +45,7 @@ logger = logging.getLogger(__name__)
 # -----------------------------------------------------------------------------
 CPU_HOURS_PER_ROUND = 0.2684
 RANDOM_STATE = 42
+REFERENCE_THRESHOLD = 0.5
 
 DATA_PATH = Path("data/training_dataset_with_target.csv")
 MODEL_PATH = Path("models/best_model_pipeline.pkl")
@@ -303,7 +304,13 @@ def plot_sensitivity_analysis(results_df: pd.DataFrame):
     ax.plot(results_df["threshold"], results_df["accuracy"], "o-", label="Accuracy", linewidth=2)
     ax.plot(results_df["threshold"], results_df["balanced_accuracy"], "s-", label="Balanced Acc", linewidth=2)
     ax.plot(results_df["threshold"], results_df["macro_f1"], "^-", label="Macro F1", linewidth=2)
-    ax.axvline(x=0.5, color="red", linestyle="--", alpha=0.5, label="Default (0.5)")
+    ax.axvline(
+        x=REFERENCE_THRESHOLD,
+        color="red",
+        linestyle="--",
+        alpha=0.5,
+        label=f"Reference threshold ({REFERENCE_THRESHOLD})"
+    )
     ax.set_xlabel("Confidence Threshold")
     ax.set_ylabel("Score")
     ax.set_title("Performance Metrics vs Confidence Threshold")
@@ -315,7 +322,7 @@ def plot_sensitivity_analysis(results_df: pd.DataFrame):
     ax2 = ax.twinx()
     l1 = ax.plot(results_df["threshold"], results_df["qwk"], "o-", color="green", label="QWK", linewidth=2)
     l2 = ax2.plot(results_df["threshold"], results_df["mae"], "s-", color="orange", label="MAE", linewidth=2)
-    ax.axvline(x=0.5, color="red", linestyle="--", alpha=0.5)
+    ax.axvline(x=REFERENCE_THRESHOLD, color="red", linestyle="--", alpha=0.5)
     ax.set_xlabel("Confidence Threshold")
     ax.set_ylabel("Quadratic Weighted Kappa", color="green")
     ax2.set_ylabel("Mean Absolute Error", color="orange")
@@ -330,7 +337,13 @@ def plot_sensitivity_analysis(results_df: pd.DataFrame):
     ax.plot(results_df["threshold"], results_df["pct_early"], "o-", label="Early (R1)", linewidth=2)
     ax.plot(results_df["threshold"], results_df["pct_medium"], "s-", label="Medium (R3)", linewidth=2)
     ax.plot(results_df["threshold"], results_df["pct_late"], "^-", label="Late (R5)", linewidth=2)
-    ax.axvline(x=0.5, color="red", linestyle="--", alpha=0.5, label="Default (0.5)")
+    ax.axvline(
+        x=REFERENCE_THRESHOLD,
+        color="red",
+        linestyle="--",
+        alpha=0.5,
+        label=f"Reference threshold ({REFERENCE_THRESHOLD})"
+    )
     ax.set_xlabel("Confidence Threshold")
     ax.set_ylabel("Percentage (%)")
     ax.set_title("Decision Distribution")
@@ -340,7 +353,13 @@ def plot_sensitivity_analysis(results_df: pd.DataFrame):
     # 4. Bias rate
     ax = axes[1, 1]
     ax.plot(results_df["threshold"], results_df["bias_applied_rate"], "o-", color="purple", linewidth=2)
-    ax.axvline(x=0.5, color="red", linestyle="--", alpha=0.5, label="Default (0.5)")
+    ax.axvline(
+        x=REFERENCE_THRESHOLD,
+        color="red",
+        linestyle="--",
+        alpha=0.5,
+        label=f"Reference threshold ({REFERENCE_THRESHOLD})"
+    )
     ax.set_xlabel("Confidence Threshold")
     ax.set_ylabel("Bias Applied Rate (%)")
     ax.set_title("Conservative Bias Application Rate")
@@ -350,7 +369,13 @@ def plot_sensitivity_analysis(results_df: pd.DataFrame):
     # 5. CPU reduction
     ax = axes[2, 0]
     ax.plot(results_df["threshold"], results_df["cpu_reduction_pct"], "o-", color="blue", linewidth=2)
-    ax.axvline(x=0.5, color="red", linestyle="--", alpha=0.5, label="Default (0.5)")
+    ax.axvline(
+        x=REFERENCE_THRESHOLD,
+        color="red",
+        linestyle="--",
+        alpha=0.5,
+        label=f"Reference threshold ({REFERENCE_THRESHOLD})"
+    )
     ax.set_xlabel("Confidence Threshold")
     ax.set_ylabel("CPU Reduction (%)")
     ax.set_title("Computational Cost Savings")
@@ -373,13 +398,13 @@ def plot_sensitivity_analysis(results_df: pd.DataFrame):
         results_df["false_negative_cost"],
         "s-",
         color="orange",
-        label="Decision Cost",
+        label="Decision error (MAE)",
         linewidth=2
     )
-    ax.axvline(x=0.5, color="red", linestyle="--", alpha=0.5)
+    ax.axvline(x=REFERENCE_THRESHOLD, color="red", linestyle="--", alpha=0.5)
     ax.set_xlabel("Confidence Threshold")
     ax.set_ylabel("False Early Rate (%)", color="red")
-    ax2.set_ylabel("Decision Cost (MAE)", color="orange")
+    ax2.set_ylabel("Decision error (MAE)", color="orange")
     ax.set_title("Safety Metrics")
     lns = l1 + l2
     labs = [l.get_label() for l in lns]
@@ -452,8 +477,8 @@ def main():
     logger.info(f"  CPU Reduction: {results_df.loc[optimal_idx, 'cpu_reduction_pct']:.1f}%")
     logger.info(f"  False Early Rate: {results_df.loc[optimal_idx, 'false_early_rate']:.3f}")
 
-    default_idx = results_df.index[results_df["threshold"] == 0.5][0]
-    logger.info("\nDefault threshold (0.5):")
+    default_idx = results_df.index[results_df["threshold"] == REFERENCE_THRESHOLD][0]
+    logger.info(f"\nReference threshold ({REFERENCE_THRESHOLD}):")
     logger.info(f"  Accuracy: {results_df.loc[default_idx, 'accuracy']:.3f}")
     logger.info(f"  QWK: {results_df.loc[default_idx, 'qwk']:.3f}")
     logger.info(f"  CPU Reduction: {results_df.loc[default_idx, 'cpu_reduction_pct']:.1f}%")

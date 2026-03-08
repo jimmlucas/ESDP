@@ -61,7 +61,13 @@ PLOTS_DIR = OUTPUTS_DIR / "plots"
 # ============================================================
 # HELPER FUNCTIONS
 # ============================================================
-def bootstrap_ci(data, statistic=np.mean, n_bootstrap=N_BOOTSTRAP, confidence=CONFIDENCE_LEVEL, random_state=RANDOM_STATE):
+def bootstrap_ci(
+    data,
+    statistic=np.mean,
+    n_bootstrap=N_BOOTSTRAP,
+    confidence=CONFIDENCE_LEVEL,
+    random_state=RANDOM_STATE,
+):
     """Bootstrap confidence interval for a statistic."""
     data = np.asarray(data, dtype=float)
     data = data[~np.isnan(data)]
@@ -84,7 +90,7 @@ def bootstrap_ci(data, statistic=np.mean, n_bootstrap=N_BOOTSTRAP, confidence=CO
 
 
 def format_ci(mean, lower, upper, decimals=2):
-    """Format mean and CI."""
+    """Format mean and confidence interval."""
     if np.isnan(mean):
         return "NA"
     return f"{mean:.{decimals}f} [{lower:.{decimals}f}, {upper:.{decimals}f}]"
@@ -395,8 +401,14 @@ def run_benchmark():
     logger.info(f"  Total trajectories: {total_traj}")
     logger.info(f"  Unique test samples: {total_samples}")
     logger.info(f"  Total CPU saved: {res_df['CPU_Saved_ESDP'].sum():.1f}h")
-    logger.info(f"  Avg CPU saved per trajectory: {format_ci(cpu_saved_esdp_mean, *cpu_saved_esdp_ci)}h")
-    logger.info(f"  Avg CPU reduction: {format_ci(cpu_reduction_esdp_mean, *cpu_reduction_esdp_ci)}%")
+    logger.info(
+        f"  Avg CPU saved per trajectory: "
+        f"{format_ci(cpu_saved_esdp_mean, *cpu_saved_esdp_ci)}h"
+    )
+    logger.info(
+        f"  Avg CPU reduction: "
+        f"{format_ci(cpu_reduction_esdp_mean, *cpu_reduction_esdp_ci)}%"
+    )
 
     qv_loss_mean = res_df["QV_Loss_ESDP"].mean()
     qv_loss_ci = bootstrap_ci(res_df["QV_Loss_ESDP"].values)
@@ -407,8 +419,14 @@ def run_benchmark():
     logger.info("\n🎯 QUALITY IMPACT (ESDP):")
     logger.info(f"  Avg QV loss: {format_ci(qv_loss_mean, *qv_loss_ci, decimals=4)} points")
     logger.info(f"  Avg BUSCO loss: {format_ci(busco_loss_mean, *busco_loss_ci)}%")
-    logger.info(f"  Trajectories with ZERO QV loss: {(res_df['QV_Loss_ESDP'] <= 0.01).sum()} / {total_traj}")
-    logger.info(f"  Trajectories with acceptable loss: {res_df['Acceptable_Quality_ESDP'].sum()} / {total_traj}")
+    logger.info(
+        f"  Trajectories with ZERO QV loss: "
+        f"{(res_df['QV_Loss_ESDP'] <= 0.01).sum()} / {total_traj}"
+    )
+    logger.info(
+        f"  Trajectories with acceptable loss: "
+        f"{res_df['Acceptable_Quality_ESDP'].sum()} / {total_traj}"
+    )
 
     eff_gain_mean = res_df["Efficiency_Gain_ESDP_Pct"].mean()
     eff_gain_ci = bootstrap_ci(res_df["Efficiency_Gain_ESDP_Pct"].values)
@@ -496,15 +514,26 @@ def run_benchmark():
         alpha=0.7,
         edgecolors="black"
     )
-    ax.axhline(ACCEPTABLE_QV_LOSS, color="red", linestyle="--", label=f"Acceptable QV loss ({ACCEPTABLE_QV_LOSS})")
-    ax.axhline(0, color="green", linestyle="-", alpha=0.4, label="No quality loss")
+    ax.axhline(
+        ACCEPTABLE_QV_LOSS,
+        color="red",
+        linestyle="--",
+        label=f"Acceptable QV loss threshold ({ACCEPTABLE_QV_LOSS})"
+    )
+    ax.axhline(
+        0,
+        color="green",
+        linestyle="-",
+        alpha=0.4,
+        label="Zero QV loss"
+    )
     ax.set_xlabel("CPU Resource Reduction (%)")
     ax.set_ylabel("Quality Loss (QV points)")
-    ax.set_title("ESDP Performance: Resource Saving vs Quality Loss")
+    ax.set_title("Resource-efficiency benchmark of ESDP")
     ax.grid(True, alpha=0.3)
     ax.legend()
     cbar = plt.colorbar(scatter, ax=ax)
-    cbar.set_label("Recommended Rounds", rotation=270, labelpad=20)
+    cbar.set_label("Recommended polishing rounds", rotation=270, labelpad=20)
     plt.tight_layout()
     plt.savefig(PLOTS_DIR / "resource_vs_quality.png", dpi=300)
     plt.close()
@@ -523,7 +552,14 @@ def run_benchmark():
     ax1.grid(True, alpha=0.3, axis="y")
     for bar in bars1:
         h = bar.get_height()
-        ax1.text(bar.get_x() + bar.get_width() / 2, h, f"{h:.2f}h", ha="center", va="bottom", fontsize=9)
+        ax1.text(
+            bar.get_x() + bar.get_width() / 2,
+            h,
+            f"{h:.2f}h",
+            ha="center",
+            va="bottom",
+            fontsize=9,
+        )
 
     bars2 = ax2.bar(strategies, qv_means, alpha=0.8)
     ax2.set_ylabel("Average QV")
@@ -531,7 +567,14 @@ def run_benchmark():
     ax2.grid(True, alpha=0.3, axis="y")
     for bar in bars2:
         h = bar.get_height()
-        ax2.text(bar.get_x() + bar.get_width() / 2, h, f"{h:.2f}", ha="center", va="bottom", fontsize=9)
+        ax2.text(
+            bar.get_x() + bar.get_width() / 2,
+            h,
+            f"{h:.2f}",
+            ha="center",
+            va="bottom",
+            fontsize=9,
+        )
 
     plt.tight_layout()
     plt.savefig(PLOTS_DIR / "baseline_comparison.png", dpi=300)
@@ -582,7 +625,12 @@ def run_benchmark():
     ax1.grid(True, alpha=0.3)
 
     ax2.hist(res_df["QV_Loss_ESDP"], bins=20, edgecolor="black", alpha=0.7)
-    ax2.axvline(ACCEPTABLE_QV_LOSS, color="red", linestyle="--", label=f"Acceptable threshold ({ACCEPTABLE_QV_LOSS})")
+    ax2.axvline(
+        ACCEPTABLE_QV_LOSS,
+        color="red",
+        linestyle="--",
+        label=f"Acceptable threshold ({ACCEPTABLE_QV_LOSS})"
+    )
     ax2.axvline(0, color="green", linestyle="-", alpha=0.5, label="No loss")
     ax2.set_xlabel("QV Loss (points)")
     ax2.set_ylabel("Number of Trajectories")
@@ -654,7 +702,7 @@ def run_benchmark():
             "Efficiency Gain % (mean ± 95% CI)",
             "Trajectories with Zero QV Loss",
             "Trajectories with Acceptable Loss",
-            "Statistical Significance (QV vs R1)"
+            "Statistical significance (QV vs Always R1)",
         ],
         "Value": [
             format_ci(cpu_saved_esdp_mean, *cpu_saved_esdp_ci) + "h",
@@ -662,10 +710,12 @@ def run_benchmark():
             format_ci(qv_loss_mean, *qv_loss_ci, decimals=4),
             format_ci(busco_loss_mean, *busco_loss_ci) + "%",
             format_ci(eff_gain_mean, *eff_gain_ci) + "%",
-            f"{(res_df['QV_Loss_ESDP'] <= 0.01).sum()} / {total_traj} ({(res_df['QV_Loss_ESDP'] <= 0.01).sum() / total_traj * 100:.1f}%)",
-            f"{res_df['Acceptable_Quality_ESDP'].sum()} / {total_traj} ({res_df['Acceptable_Quality_ESDP'].sum() / total_traj * 100:.1f}%)",
-            f"p={p_qv_r1:.4f} {significance_stars(p_qv_r1)}"
-        ]
+            f"{(res_df['QV_Loss_ESDP'] <= 0.01).sum()} / {total_traj} "
+            f"({(res_df['QV_Loss_ESDP'] <= 0.01).sum() / total_traj * 100:.1f}%)",
+            f"{res_df['Acceptable_Quality_ESDP'].sum()} / {total_traj} "
+            f"({res_df['Acceptable_Quality_ESDP'].sum() / total_traj * 100:.1f}%)",
+            f"p={p_qv_r1:.4f} {significance_stars(p_qv_r1)}",
+        ],
     })
 
     logger.info(f"\n{pub_table.to_string(index=False)}")

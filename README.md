@@ -1,27 +1,19 @@
----
-title: "README"
-output: github_document
----
-
 # ESDP
 
-### A Decision Framework for Resource-Efficient Bacterial Genome Polishing
+### Early Stop Decision Polishing for Oxford Nanopore Bacterial Genome Polishing
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
+[![Python](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![Status](https://img.shields.io/badge/status-active-success.svg)]()
-[![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.XXXXXXX-blue)]()
-[![Paper](https://img.shields.io/badge/paper-under%20preparation-orange)]()
+[![Docker](https://img.shields.io/badge/docker-ready-blue.svg)]()
 
 > **Stop polishing when it matters, not when it is scheduled**
 
 ---
 
-**Note:** This tool is intended for research use and decision support. Predictions should be interpreted alongside assembly-quality metrics and domain expertise.
+**Research-use software.** Predictions should be interpreted together with assembly-quality metrics and domain expertise.
 
----
-
-**Version: 1.0**
+**Version:** 1.0.2
 
 ---
 
@@ -47,251 +39,369 @@ output: github_document
 
 ## Overview
 
-ESDP is a machine learning-based decision framework for Oxford Nanopore bacterial genome polishing. Instead of always running a fixed number of polishing rounds, ESDP uses early polishing and assembly-quality signals to recommend whether a sample can stop early, continue to an intermediate stage, or proceed to the full polishing schedule.
+Oxford Nanopore sequencing enables high-contiguity bacterial genome assemblies, but iterative polishing pipelines are commonly executed with a fixed number of rounds. In practice, this can lead to unnecessary computation after assembly quality has already stabilized.
 
-The repository includes:
+ESDP is a machine learning-based decision-support framework designed to recommend whether polishing can stop early or should continue. Rather than predicting exact polishing rounds directly for deployment, ESDP combines statistical prediction with explicit operational safeguards to produce conservative and transparent stopping recommendations.
 
-- a full data-processing and model-training pipeline
-- feature engineering and target relabeling for a three-class stopping task
-- formal evaluation against naive baselines
-- resource benchmarking and sensitivity analysis
-- a command-line interface for workflow integration
-- a FastAPI service for online inference
-- Docker and Docker Compose support for reproducible deployment
+The framework was developed and evaluated on 805 polishing records derived from 41 bacterial samples spanning 9 genera, five polishing rounds, and four coverage groups (10X, 20X, 40X, and FULL). To avoid information leakage, evaluation was performed with sample-level separation, using 32 training samples and 9 held-out test samples. :contentReference[oaicite:1]{index=1}
 
-### Problem Statement
+ESDP supports both command-line and service-based use. The software includes a REST API implemented with FastAPI, containerized deployment, reproducible model artifacts, and dedicated verification scripts for decision logic, API behavior, benchmarking, and sensitivity analysis. :contentReference[oaicite:2]{index=2}
 
-Iterative polishing is a standard step in long-read bacterial genome assembly, but most practical workflows still apply a **fixed number of rounds**, commonly five, regardless of whether quality has already stabilized. This creates three problems:
+In the current benchmark, Random Forest was selected as the final model for downstream deployment and benchmarking based on its overall balance across exact classification, ordinal agreement, and error minimization on the held-out test set. :contentReference[oaicite:3]{index=3}
 
-- **Computational inefficiency:** assemblies that converge early continue consuming CPU time unnecessarily.
-- **Limited decision support:** standard polishing workflows do not provide a principled recommendation of when to stop.
-- **Workflow rigidity:** fixed-round execution prevents adaptive resource allocation across samples with different quality profiles.
+### Why ESDP?
 
-### Our Solution
+Fixed-round polishing workflows are simple to run, but they often continue processing after assembly quality has already stabilized. This can lead to unnecessary computational cost, limited visibility into convergence behavior, and little practical support for adaptive stopping decisions.
 
-ESDP addresses this by learning **data-driven stopping decisions** from polishing trajectories. The current system predicts a **three-class stopping recommendation** derived from the original five-round formulation:
+ESDP addresses this problem by using machine learning to recommend a conservative polishing strategy based on early-round assembly-quality signals. Instead of relying only on a raw classifier output, the framework combines statistical prediction with explicit decision rules to support transparent and reproducible early-stop recommendations.
 
-| Class | Recommendation | Original rounds | Interpretation |
-|:---:|---|:---:|---|
-| 1 | Early | 1-2 | assembly reaches acceptable quality quickly |
-| 2 | Medium | 3-4 | additional polishing is useful but full execution may be unnecessary |
-| 3 | Late | 5 | full polishing schedule is recommended |
+---
 
-This formulation reduces sparsity in the original five-round problem and provides a more stable and operationally useful decision target.
+## Problem Formulation
+
+During development, several challenges had to be addressed to make adaptive polishing decisions reliable and deployable.
+
+### 1. From round-level prediction to operational stopping classes
+
+A direct five-class formulation based on exact polishing rounds proved difficult to model robustly and was less suitable for deployment. To make the task more stable and operationally meaningful, ESDP reformulates the problem into three stopping categories:
+
+- **Early**: stop after 1–2 rounds
+- **Medium**: stop after 3–4 rounds
+- **Late**: continue to round 5
+
+This representation improves decision stability while preserving the ordinal structure of the polishing process.
+
+### 2. Capturing polishing dynamics, not only absolute quality
+
+Single-round metrics alone do not fully describe whether polishing is still improving meaningfully or has already plateaued. To address this, ESDP uses engineered features that summarize both assembly quality and convergence behavior, including:
+
+- round-to-round delta features
+- first-round normalized metrics
+- ratio-based and cumulative descriptors
+- plateau indicators
+- domain-specific summary features
+
+These features help the model distinguish between early convergence, transitional cases, and assemblies that still benefit from continued polishing.
+
+### 3. Preventing leakage and preserving realistic evaluation
+
+Because multiple records can be derived from the same biological sample across rounds and coverage groups, row-level splitting would produce information leakage. ESDP therefore uses sample-level grouping during training and evaluation so that held-out predictions reflect genuinely unseen isolates rather than repeated observations from the same sample.
+
+### 4. Separating prediction from decision logic
+
+A key design principle of ESDP is that model prediction and deployment-time decision support are treated separately. The final recommendation layer applies explicit safeguards to make outputs more conservative and interpretable, including:
+
+- first-round quality overrides
+- confidence-aware escalation to more conservative recommendations
+- optional forced-conservative operation
+
+This design makes ESDP more suitable for practical workflow integration than a classifier alone.
+### 3. Model development and robustness
+
+To support reliable stopping recommendations, ESDP evaluates multiple supervised learning approaches during development, including XGBoost, Random Forest, ordinal regression, and ensemble configurations. This comparison framework was used to assess predictive performance across exact classification, ordinal agreement, and error minimization. 
+
+Among the candidate models, **Random Forest** achieved the best overall balance on the held-out sample-level test set and was therefore selected as the final model for downstream benchmarking and deployment. 
+
+### 4. Leakage-aware evaluation
+
+Because multiple polishing records can be derived from the same biological isolate across rounds and coverage groups, random row-level splitting would risk information leakage. ESDP therefore uses **sample-level grouping** during training and evaluation so that held-out predictions reflect genuinely unseen isolates rather than repeated observations from the same sample. In the current benchmark, this resulted in a split of **32 training samples** and **9 held-out test samples**. 
 
 ---
 
 ## Key Features
 
-### 1. Three-class stopping system
+### 3-class stopping framework
 
-Instead of predicting an exact round from 1 to 5, ESDP predicts an **Early / Medium / Late** stopping recommendation. This design:
+Instead of predicting exact polishing rounds directly for deployment, ESDP predicts **stopping categories** that are more stable and operationally meaningful:
 
-- reduces confusion between adjacent rounds
-- improves class balance relative to the original five-class task
-- preserves the ordinal structure of the polishing process
-- maps naturally to practical workflow decisions
+| Class | Strategy | Recommended rounds | Description |
+|:-----:|----------|:------------------:|-------------|
+| **1** | Early    | 1–2                | Assembly quality stabilizes early |
+| **2** | Medium   | 3–4                | Transitional regime with moderate additional benefit |
+| **3** | Late     | 5                  | Continued polishing is recommended |
 
-### 2. Feature engineering from polishing trajectories
+This formulation preserves the ordinal structure of the polishing process while reducing unnecessary sensitivity to adjacent round-level differences. The held-out test results also showed that most residual errors occurred between adjacent classes rather than as extreme misclassifications. 
 
-The pipeline derives features from assembly-quality metrics across polishing rounds, including:
+### Feature engineering for polishing dynamics
 
-- base features such as `n50`, `qv`, `error_rate`, `busco_complete`, `assembly_frac`, `num_contigs`, and `total_length`
-- delta and improvement features such as `delta_qv`, `delta_busco_complete`, `delta_n50`, and `delta_error_rate`
-- normalized features relative to round 1 such as `qv_from_r1`, `n50_from_r1`, `error_rate_from_r1`, and `busco_complete_from_r1`
-- cumulative and trend features such as `delta_qv_cumsum`, `delta_busco_complete_cumsum`, `delta_qv_trend`, and `score_improvement_trend`
-- plateau-oriented indicators such as `is_plateau` and `plateau_streak`
-- domain-specific summary features such as `completeness_score`, `assembly_quality`, and `polishing_effectiveness`
-- Flye-derived coverage features such as `coverage_est`, `mean_edge_coverage`, and `align_err_consensus`
+ESDP uses a structured feature space built from per-round polishing and assembly-quality measurements. The feature set includes:
 
-### 3. Multiple model families
+- **round-to-round delta features**
+- **ratio-based descriptors**
+- **cumulative improvement variables**
+- **first-round normalized metrics**
+- **plateau indicators**
+- **domain-specific summary features**
 
-The training pipeline evaluates several model families:
+These features were designed to capture not only absolute assembly quality, but also convergence behavior and diminishing returns across polishing rounds. 
 
-1. **XGBoost**
-2. **Random Forest**
-3. **Ordinal Regression**
-4. **Soft-voting Ensemble**
+### Decision-support layer
 
-The reference run included in this repository selected **Random Forest** as the best-performing model on the held-out sample-level test split.
+A key design element of ESDP is the separation between **statistical prediction** and **operational decision logic**. Model outputs are processed by a dedicated decision module that applies explicit safeguards to support conservative and transparent recommendations. These include:
 
-### 4. Conservative decision logic for online use
+- **first-round quality overrides**
+- **confidence-aware escalation to more conservative recommendations**
+- **optional forced-conservative operation**
 
-Offline predictions are complemented by a decision layer that supports operational deployment, including:
+Returned outputs include the predicted class, recommended number of polishing rounds, class probabilities, confidence score, decision rationale, warning flags, and metadata on applied overrides. 
 
-- confidence-aware conservative bias
-- optional force-conservative behavior
-- domain-specific rule overrides
-- transparent probabilities and reasoning in the final response
+### Interfaces and deployment
 
-### 5. Deployable interfaces
+ESDP supports both **command-line execution** and **service-based inference**. The software includes:
 
-ESDP can be used in different ways:
+- a **REST API** implemented with **FastAPI**
+- containerized deployment
+- bundled model artifacts and feature metadata
+- verification scripts for decision logic, API behavior, and pipeline integration
+- reproducible benchmarking and sensitivity-analysis workflows
 
-- **CLI** for local execution and workflow integration
-- **FastAPI REST service** for online inference
-- **Docker / Docker Compose** for reproducible deployment
-- **tests and structured logging** for more reliable operational use
+This design allows the framework to function both as software and as a reproducible decision system for adaptive genome polishing. 
+
+### Evaluation outputs
+
+The evaluation workflow generates standardized artifacts for inspection and reuse, including:
+
+- trained models
+- preprocessing objects
+- selected feature lists
+- confusion matrices
+- feature-importance visualizations
+- comparative performance summaries
+
+These outputs support reproducibility, model inspection, and downstream benchmarking. :contentReference[oaicite:11]{index=11}
 
 ---
 
 ## Performance Highlights
 
-### Dataset Statistics
+### Dataset statistics
 
-The reference dataset included in this repository contains:
-
-- **805 rows** in the final training table
 - **41 bacterial samples**
-- **161 sample-coverage groups**
-- **5 original polishing rounds**
-- **3 stopping classes** after relabeling
+- **805 polishing records**
+- **9 bacterial genera**
+- **5 polishing rounds**
+- **4 coverage groups:** 10X, 20X, 40X, and FULL
+- **Sample-level split:** 32 training samples / 9 held-out test samples
 
-### Model Performance
+The current benchmark dataset was generated from Oxford Nanopore bacterial read sets assembled with Flye and processed through an iterative polishing workflow under a fixed experimental configuration. 
 
-In the reference run, the **best model was Random Forest**.
+### Final model performance
 
-| Metric | Value |
-|---|---:|
-| Accuracy | 0.629 |
-| Balanced Accuracy | 0.592 |
-| Macro F1 | 0.568 |
-| MAE | 0.482 |
-| Accuracy within one class | 0.888 |
-| Quadratic Weighted Kappa | 0.561 |
-
-Formal baseline comparison:
-
-| Model | Balanced accuracy | Macro F1 | MAE | QWK |
-|---|---:|---:|---:|---:|
-| Best model | 0.592 | 0.568 | 0.482 | 0.561 |
-| Always late baseline | 0.333 | 0.231 | 0.735 | 0.000 |
-| QV threshold baseline | 0.333 | 0.231 | 0.735 | 0.000 |
-| R1-only Random Forest | 0.566 | 0.571 | 0.465 | 0.538 |
-
-### Practical Impact
-
-Compared with a fixed five-round baseline, the reference ESDP benchmark reported:
+On the held-out sample-level test set, the selected **Random Forest** model achieved:
 
 | Metric | Value |
-|---|---:|
-| CPU reduction | 44.71% |
-| Mean CPU saved per trajectory | 0.60 h |
-| Mean QV loss | -0.0038 |
-| Mean BUSCO loss | -0.51% |
-| Efficiency gain | 200.17% |
-| Zero QV loss trajectories | 33 / 34 |
-| Acceptable-loss trajectories | 34 / 34 |
+|--------|-------|
+| **Accuracy** | 0.629 |
+| **Balanced Accuracy** | **0.592** |
+| **Macro-F1** | 0.568 |
+| **MAE** | 0.482 |
+| **Accuracy ±1 class** | 0.888 |
+| **QWK** | 0.561 |
 
-These results indicate that ESDP can reduce polishing cost substantially while largely preserving assembly quality.
+Class-wise performance was strongest for the early and late stopping categories, while the intermediate class remained the most difficult to resolve. For Random Forest, recall was **0.822** for class 1, **0.286** for class 2, and **0.667** for class 3. 
+
+### Baseline comparison
+
+ESDP was compared against three baseline decision strategies on the held-out test set:
+
+- **Always Late** (fixed five-round polishing)
+- **QV-threshold rule**
+- **R1-only Random Forest**
+
+| Strategy | Balanced Accuracy | Macro-F1 | MAE | QWK |
+|----------|------------------:|---------:|----:|----:|
+| **ESDP (final model)** | **0.592** | 0.568 | 0.482 | **0.561** |
+| Always Late | 0.333 | 0.231 | 0.735 | 0.000 |
+| QV Threshold | 0.333 | 0.231 | 0.735 | 0.000 |
+| R1-only RF | 0.566 | **0.571** | **0.465** | 0.538 |
+
+These comparisons show that ESDP substantially outperforms fixed or naive strategies, while also confirming that first-round metrics alone already contain strong predictive information. The full framework retained the best overall balanced accuracy and quadratic weighted kappa. :contentReference[oaicite:14]{index=14}
 
 ---
-
 ## Model Details
 
-### Training pipeline
+### Final model
 
-The repository includes a complete end-to-end workflow:
+During development, ESDP compared multiple supervised learning strategies, including **XGBoost**, **Random Forest**, **ordinal regression**, and **ensemble configurations**. On the held-out sample-level test set, **Random Forest** achieved the best overall balance across exact classification, ordinal agreement, and error minimization, and was therefore selected as the final model for downstream benchmarking and deployment. 
 
-- `1_csv_merge.py`: merge and harmonize polishing metrics
-- `2_exploratory_analysis.py`: exploratory analysis and plots
-- `3_feature_engineering.py`: derived feature construction
-- `4_label_optimal_round.py`: optimal-round labeling and three-class conversion
-- `5_train_models.py`: multi-model training and model selection
-- `8_evaluate_models.py`: formal evaluation against baselines
-- `9_benchmark_resources.py`: quality-versus-cost benchmark
-- `10_sensitivity_analysis.py`: confidence-threshold analysis
+### Decision-support design
 
-### Inference and serving
+A key design principle of ESDP is the separation between **statistical prediction** and **deployment-time decision support**. Model outputs are processed through a dedicated decision layer that applies explicit safeguards to support conservative and interpretable recommendations. These safeguards include:
 
-- `7_inference_pipeline.py`: inference workflow
-- `esdp_decide.py`: final decision logic and conservative overrides
-- `esdp_cli.py`: command-line entry point
-- `api_service.py`: FastAPI service for online inference
+- **first-round quality overrides**
+- **confidence-aware escalation** toward more conservative recommendations
+- **optional forced-conservative operation**
 
-### Leakage control
+Returned outputs include the predicted stopping class, recommended number of polishing rounds, class probabilities, confidence score, rationale, warning flags, and metadata on applied overrides. 
 
-To avoid leakage between related observations, the reference split is performed at the **sample level**, not the row level. This prevents different rows from the same biological sample from being distributed across train and test partitions.
+### Feature groups
 
-### Deployment-oriented components
+ESDP uses engineered features designed to capture both absolute assembly quality and polishing dynamics. These include:
 
-The project includes:
+- **base assembly and polishing metrics**
+- **round-to-round delta features**
+- **first-round normalized metrics**
+- **ratio-based descriptors**
+- **cumulative improvement variables**
+- **plateau indicators**
+- **domain-specific summary features**
 
-- `Dockerfile`
-- `docker-compose.yml`
-- `docker-entrypoint.sh`
-- `config.yaml`
-- `test/` for API, decision, and integration tests
-- `docs/` for installation, usage, and dataset-building guidance
+To reduce training-serving skew, preprocessing is embedded within the serialized model pipeline. Infinite values are converted to missing values, missing features are preserved until inference-time preprocessing, and imputation and scaling are applied consistently during both training and deployment. 
+
+### Training and evaluation
+
+The current benchmark dataset contains **805 polishing records** derived from **41 bacterial samples**, spanning **9 genera**, **5 polishing rounds**, and **4 coverage groups** (**10X, 20X, 40X, and FULL**). Evaluation was performed with **sample-level separation** to prevent leakage between coverage-derived observations from the same isolate, resulting in **32 training samples** and **9 held-out test samples**. 
+
+On the held-out test set, the final **Random Forest** model achieved:
+
+| Metric | Value |
+|--------|-------|
+| **Accuracy** | 0.629 |
+| **Balanced Accuracy** | **0.592** |
+| **Macro-F1** | 0.568 |
+| **MAE** | 0.482 |
+| **Accuracy ±1 class** | 0.888 |
+| **QWK** | 0.561 |
+
+Most residual errors occurred between adjacent stopping categories rather than as extreme misclassifications. Class-wise recall for the final Random Forest model was **0.822** for class 1, **0.286** for class 2, and **0.667** for class 3. 
+
+### Baseline comparison
+
+To assess practical value, ESDP was compared against three baseline decision strategies on the held-out test set:
+
+- **Always Late** (fixed five-round polishing)
+- **QV-threshold rule**
+- **R1-only Random Forest**
+
+| Strategy | Balanced Accuracy | Macro-F1 | MAE | QWK |
+|----------|------------------:|---------:|----:|----:|
+| **ESDP** | **0.592** | 0.568 | 0.482 | **0.561** |
+| Always Late | 0.333 | 0.231 | 0.735 | 0.000 |
+| QV Threshold | 0.333 | 0.231 | 0.735 | 0.000 |
+| R1-only RF | 0.566 | **0.571** | **0.465** | 0.538 |
+
+These comparisons show that ESDP clearly outperforms naive fixed or heuristic strategies, while also indicating that first-round signals already contain substantial predictive information. The full ESDP framework retained the best overall balanced accuracy and quadratic weighted kappa. 
+
+---
+## Tools & Dependencies
+
+ESDP builds on the following core tools and libraries:
+
+- [Flye](https://github.com/mikolmogorov/Flye) - long-read assembler for bacterial genome reconstruction
+- [Racon](https://github.com/isovic/racon) - consensus polishing for long-read assemblies
+- [Medaka](https://github.com/nanoporetech/medaka) - neural network-based polishing for Oxford Nanopore data
+- [QUAST](https://github.com/ablab/quast) - assembly quality assessment
+- [BUSCO](https://busco.ezlab.org/) - genome completeness assessment
+- [scikit-learn](https://scikit-learn.org/) - machine learning framework
+- [XGBoost](https://xgboost.readthedocs.io/) - gradient boosting models evaluated during development
+- [imbalanced-learn](https://imbalanced-learn.org/) - resampling utilities used during model development
+- [FastAPI](https://fastapi.tiangolo.com/) - REST API layer
+- [Docker](https://www.docker.com/) - containerized deployment
 
 ---
 
 ## Citation
 
-If you use this repository, please cite the associated software release and manuscript when available.
+If you use ESDP in your research, please cite the software repository and, when available, the archived Zenodo release.
 
 ```bibtex
-@software{esdp,
-  author = {Jimmy Lucas and collaborators},
-  title = {ESDP: A Decision Framework for Resource-Efficient Bacterial Genome Polishing},
-  year = {2026},
-  url = {https://github.com/jimmlucas/ESDP-Early-Stop-Decision-Polishing}
+@software{lucas_esdp,
+  author       = {Jimmy Lucas and Rodrigo de Pablo},
+  title        = {ESDP: Early Stop Decision Polishing},
+  year         = {2026},
+  url          = {https://github.com/jimmlucas/ESDP-Early-Stop-Decision-Polishing},
+  version      = {v1.0.2}
 }
 ```
-
 ---
 
 ## Acknowledgments
-
-We acknowledge:
-
-- the developers of **Racon**, **Medaka**, **Flye**, **QUAST**, and **BUSCO**
-- public data contributors and repositories that enabled dataset construction
-- the open-source communities behind **scikit-learn**, **XGBoost**, **FastAPI**, and related tools
+We thank the bioinformatics community for the development and maintenance of the open-source software that
+supports this project, including Flye, Racon, Medaka, QUAST, BUSCO, scikit-learn, XGBoost, FastAPI, and Docker.
+We also acknowledge the NCBI Sequence Read Archive for providing public access to the sequencing datasets used to
+construct the benchmark dataset.
 
 ---
 
 ## Contact
 
-**Jimmy Lucas**  
-ISGlobal, Barcelona Institute for Global Health, Barcelona, Spain  
-Email: `jimmy.lucas@isglobal.org`
+### Maintainer
+- GitHub: [@jimmlycas](https://github.com/jimmlucas)
+- Website: [LinkedIn](https://www.linkedin.com/in/jimmlucas)
 
-Project issues and feature requests should be reported through the repository issue tracker.
+### Issues & Support
 
+- **Bug Reports**: [GitHub Issues](https://github.com/jimmlucas/ESDP-Early-Stop-Decision-Polishing/issues)
+- **Feature Requests**: [GitHub Discussions](https://github.com/jimmlucas/ESDP-Early-Stop-Decision-Polishing/discussions)
+- **Questions**: [GitHub Discussions Q&A](https://github.com/jimmlucas/ESDP-Early-Stop-Decision-Polishing/discussions/categories/q-a)
+
+### Community
+
+- **GitHub**: [@AMRmicrobiology ](https://github.com/AMRmicrobiology)
 ---
-
 ## License
 
-This project is distributed under the MIT License. See `LICENSE` for details.
+ESDP is released under the MIT License. See the LICENSE file for details.
 
 ---
+## Limitations
 
+Current limitations of ESDP include:
+The benchmark dataset comprises 805 polishing records derived from 41 bacterial samples, so the effective
+biological diversity represented during development remains limited.
+The current evaluation was performed under a specific Oxford Nanopore + Flye polishing configuration, and
+performance may differ across other assemblers, polishers, sequencing conditions, or species distributions.
+The intermediate stopping category remains the most difficult to resolve, indicating that transitional polishing
+states are less separable than clear early or late stopping scenarios.
+ESDP requires the availability of the expected assembly-quality metrics and feature inputs used by the trained
+pipeline.
+
+---
 ## Future Improvements
 
-Planned directions include:
-
-1. expanding the dataset across more taxa and coverage regimes
-2. improving calibration and threshold selection for online decisions
-3. extending benchmarking across additional polishing workflows
-4. refining deployment and monitoring components for production settings
-5. improving model robustness under limited or noisy input metrics
+Planned directions for future development include:
+Broader external validation across additional bacterial genera, coverage regimes, and polishing workflows
+Recalibration of confidence thresholds for different operational settings
+Incorporation of richer early-round features to improve transitional-state detection
+Exploration of alternative decision architectures for more robust medium-class recommendations
+Prospective evaluation in routine deployment settings
 
 ---
 
 ## References
 
-### Related tools
+### Related Tools
 
-- **Racon**: ultrafast consensus for raw de novo genome assembly
-- **Medaka**: Oxford Nanopore consensus polishing
-- **Flye**: assembler for long and noisy reads
-- **QUAST**: quality assessment for genome assemblies
-- **BUSCO**: completeness assessment using conserved orthologs
+- **[Racon](https://github.com/isovic/racon)** - Ultrafast consensus module for raw de novo genome assembly
+- **[Medaka](https://github.com/nanoporetech/medaka)** - Neural network-based polishing for ONT
+- **[Pilon](https://github.com/broadinstitute/pilon)** - Automated genome assembly improvement tool
+- **[QUAST](http://quast.sourceforge.net/)** - Quality assessment tool for genome assemblies
+- **[BUSCO](https://busco.ezlab.org/)** - Assessing genome assembly completeness
+- **[Flye](https://github.com/mikolmogorov/Flye)** -Assembler for single-molecule sequencing reads
 
-### Selected publications
+1. **Flye**  
+   Kolmogorov M, Yuan J, Lin Y, Pevzner PA. Assembly of long, error-prone reads using repeat graphs. *Nat Biotechnol.* 2019;37(5):540-546.
 
-1. Vaser R, Sović I, Nagarajan N, Šikić M. Fast and accurate de novo genome assembly from long uncorrected reads. *Genome Research*. 2017.
-2. Simão FA, Waterhouse RM, Ioannidis P, Kriventseva EV, Zdobnov EM. BUSCO: assessing genome assembly and annotation completeness with single-copy orthologs. *Bioinformatics*. 2015.
-3. Chawla NV, Bowyer KW, Hall LO, Kegelmeyer WP. SMOTE: synthetic minority over-sampling technique. *Journal of Artificial Intelligence Research*. 2002.
-4. Frank E, Hall M. A simple approach to ordinal classification. *ECML*. 2001.
+2. **Racon**  
+   Vaser R, Sović I, Nagarajan N, Šikić M. Fast and accurate de novo genome assembly from long uncorrected reads. *Genome Res.* 2017;27(5):737-746.
+
+3. **Medaka**  
+   Oxford Nanopore Technologies. Medaka. Available from: https://github.com/nanoporetech/medaka
+
+4. **QUAST**  
+   Gurevich A, Saveliev V, Vyahhi N, Tesler G. QUAST: quality assessment tool for genome assemblies. *Bioinformatics.* 2013;29(8):1072-1075.
+
+5. **BUSCO**  
+   Simão FA, Waterhouse RM, Ioannidis P, Kriventseva EV, Zdobnov EM. BUSCO: assessing genome assembly and annotation completeness with single-copy orthologs. *Bioinformatics.* 2015;31(19):3210-3212.
+
+6. **XGBoost**  
+   Chen T, Guestrin C. XGBoost: a scalable tree boosting system. In: *Proceedings of the 22nd ACM SIGKDD International Conference on Knowledge Discovery and Data Mining*; 2016. p. 785-794.
+
+7. **scikit-learn**  
+   Pedregosa F, Varoquaux G, Gramfort A, Michel V, Thirion B, Grisel O, et al. Scikit-learn: machine learning in Python. *J Mach Learn Res.* 2011;12:2825-2830.
+
+8. **SMOTE**  
+   Chawla NV, Bowyer KW, Hall LO, Kegelmeyer WP. SMOTE: synthetic minority over-sampling technique. *J Artif Intell Res.* 2002;16:321-357.
+
+9. **Ordinal classification**  
+   Frank E, Hall M. A simple approach to ordinal classification. In: *European Conference on Machine Learning*; 2001. p. 145-156.

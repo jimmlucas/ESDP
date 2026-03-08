@@ -6,4 +6,4 @@ BUSCO Loss % (mean ± 95% CI),"-0.51 [-0.96, -0.17]%"
 Efficiency Gain % (mean ± 95% CI),"200.17 [139.31, 264.98]%"
 Trajectories with Zero QV Loss,33 / 34 (97.1%)
 Trajectories with Acceptable Loss,34 / 34 (100.0%)
-Statistical Significance (QV vs R1),p=0.0002 ***
+Statistical significance (QV vs Always R1),p=0.0002 ***

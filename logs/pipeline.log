@@ -1870,3 +1870,187 @@ Ordinal Regression  0.523529           0.532275  0.508886 0.576471      0.900000
 2026-03-06 13:56:23,284 - __main__ - INFO - ============================================================
 2026-03-06 13:56:23,284 - __main__ - INFO - Training Complete!
 2026-03-06 13:56:23,284 - __main__ - INFO - ============================================================
+2026-03-06 17:59:23,411 - __main__ - INFO - ============================================================
+2026-03-06 17:59:23,412 - __main__ - INFO - Starting Multi-Model Training Pipeline
+2026-03-06 17:59:23,412 - __main__ - INFO - ============================================================
+2026-03-06 17:59:23,422 - __main__ - INFO - Loaded 805 rows
+2026-03-06 17:59:23,422 - __main__ - INFO - Preparing features...
+2026-03-06 17:59:23,422 - __main__ - INFO - Selected 42 features
+2026-03-06 17:59:23,423 - __main__ - INFO - Performing sample-level grouped split...
+2026-03-06 17:59:23,425 - __main__ - INFO - Train: 635 rows, 32 samples
+2026-03-06 17:59:23,425 - __main__ - INFO - Test: 170 rows, 9 samples
+2026-03-06 17:59:23,425 - __main__ - INFO - Train class distribution:
+optimal_rounds_3class
+0    115
+1    165
+2    355
+Name: count, dtype: int64
+2026-03-06 17:59:23,425 - __main__ - INFO - Test class distribution:
+optimal_rounds_3class
+0    45
+1    35
+2    90
+Name: count, dtype: int64
+2026-03-06 17:59:23,426 - __main__ - INFO - Training XGBoost...
+2026-03-06 17:59:24,935 - __main__ - INFO - 
+XGBoost Metrics:
+2026-03-06 17:59:24,935 - __main__ - INFO -   Accuracy: 0.594
+2026-03-06 17:59:24,935 - __main__ - INFO -   Balanced Accuracy: 0.589
+2026-03-06 17:59:24,935 - __main__ - INFO -   Macro F1: 0.560
+2026-03-06 17:59:24,935 - __main__ - INFO -   MAE: 0.553
+2026-03-06 17:59:24,935 - __main__ - INFO -   Accuracy ±1: 0.853
+2026-03-06 17:59:24,935 - __main__ - INFO -   QWK: 0.476
+2026-03-06 17:59:24,935 - __main__ - INFO -   Meets targets: False
+2026-03-06 17:59:25,230 - __main__ - INFO - Saved confusion matrix to outputs/plots/cm_xgboost.png
+2026-03-06 17:59:25,494 - __main__ - INFO - Saved feature importance to outputs/plots/fi_xgboost.png
+2026-03-06 17:59:25,494 - __main__ - INFO - Training Random Forest...
+2026-03-06 17:59:26,168 - __main__ - INFO - 
+Random Forest Metrics:
+2026-03-06 17:59:26,168 - __main__ - INFO -   Accuracy: 0.629
+2026-03-06 17:59:26,168 - __main__ - INFO -   Balanced Accuracy: 0.592
+2026-03-06 17:59:26,168 - __main__ - INFO -   Macro F1: 0.568
+2026-03-06 17:59:26,168 - __main__ - INFO -   MAE: 0.482
+2026-03-06 17:59:26,168 - __main__ - INFO -   Accuracy ±1: 0.888
+2026-03-06 17:59:26,168 - __main__ - INFO -   QWK: 0.561
+2026-03-06 17:59:26,168 - __main__ - INFO -   Meets targets: False
+2026-03-06 17:59:26,334 - __main__ - INFO - Saved confusion matrix to outputs/plots/cm_random_forest.png
+2026-03-06 17:59:26,723 - __main__ - INFO - Saved feature importance to outputs/plots/fi_random_forest.png
+2026-03-06 17:59:26,723 - __main__ - INFO - Training Ordinal Regression...
+2026-03-06 17:59:27,127 - __main__ - INFO - 
+Ordinal Regression Metrics:
+2026-03-06 17:59:27,128 - __main__ - INFO -   Accuracy: 0.524
+2026-03-06 17:59:27,128 - __main__ - INFO -   Balanced Accuracy: 0.532
+2026-03-06 17:59:27,128 - __main__ - INFO -   Macro F1: 0.509
+2026-03-06 17:59:27,128 - __main__ - INFO -   MAE: 0.576
+2026-03-06 17:59:27,128 - __main__ - INFO -   Accuracy ±1: 0.900
+2026-03-06 17:59:27,128 - __main__ - INFO -   QWK: 0.458
+2026-03-06 17:59:27,128 - __main__ - INFO -   Meets targets: False
+2026-03-06 17:59:27,295 - __main__ - INFO - Saved confusion matrix to outputs/plots/cm_ordinal.png
+2026-03-06 17:59:27,295 - __main__ - INFO - Training Ensemble...
+2026-03-06 17:59:30,075 - __main__ - INFO - 
+Ensemble Metrics:
+2026-03-06 17:59:30,075 - __main__ - INFO -   Accuracy: 0.594
+2026-03-06 17:59:30,075 - __main__ - INFO -   Balanced Accuracy: 0.577
+2026-03-06 17:59:30,075 - __main__ - INFO -   Macro F1: 0.551
+2026-03-06 17:59:30,075 - __main__ - INFO -   MAE: 0.571
+2026-03-06 17:59:30,075 - __main__ - INFO -   Accuracy ±1: 0.835
+2026-03-06 17:59:30,075 - __main__ - INFO -   QWK: 0.454
+2026-03-06 17:59:30,075 - __main__ - INFO -   Meets targets: False
+2026-03-06 17:59:30,272 - __main__ - INFO - Saved confusion matrix to outputs/plots/cm_ensemble.png
+2026-03-06 17:59:30,272 - __main__ - INFO - 
+============================================================
+2026-03-06 17:59:30,273 - __main__ - INFO - MODEL COMPARISON
+2026-03-06 17:59:30,273 - __main__ - INFO - ============================================================
+2026-03-06 17:59:30,275 - __main__ - INFO - 
+             model  accuracy  balanced_accuracy  macro_f1      mae  accuracy_pm1      qwk  precision_class_1  recall_class_1  f1_class_1  support_class_1  precision_class_2  recall_class_2  f1_class_2  support_class_2  precision_class_3  recall_class_3  f1_class_3  support_class_3  meets_targets
+           XGBoost  0.594118           0.588889  0.559686 0.552941      0.852941 0.476140           0.493151        0.800000    0.610169               45           0.378378        0.400000    0.388889               35           0.850000        0.566667    0.680000               90          False
+     Random Forest  0.629412           0.591534  0.567855 0.482353      0.888235 0.561007           0.544118        0.822222    0.654867               45           0.344828        0.285714    0.312500               35           0.821918        0.666667    0.736196               90          False
+Ordinal Regression  0.523529           0.532275  0.508886 0.576471      0.900000 0.458102           0.509091        0.622222    0.560000               45           0.269841        0.485714    0.346939               35           0.846154        0.488889    0.619718               90          False
+          Ensemble  0.594118           0.577249  0.551034 0.570588      0.835294 0.454145           0.480000        0.800000    0.600000               45           0.400000        0.342857    0.369231               35           0.815385        0.588889    0.683871               90          False
+2026-03-06 17:59:30,276 - __main__ - INFO - Saved metrics to outputs/model_comparison.csv
+2026-03-06 17:59:30,277 - __main__ - INFO - Saved training metrics JSON to outputs/training_metrics.json
+2026-03-06 17:59:30,277 - __main__ - INFO - Saved split info to outputs/train_test_split_samples.json
+2026-03-06 17:59:30,277 - __main__ - INFO - Saved split info copy to outputs/train_test_split_samples.json
+2026-03-06 17:59:30,278 - __main__ - INFO - Best model: Random Forest
+2026-03-06 17:59:30,278 - __main__ - INFO -   Balanced Accuracy: 0.592
+2026-03-06 17:59:30,278 - __main__ - INFO -   Macro F1: 0.568
+2026-03-06 17:59:30,391 - __main__ - INFO - Saved model pipeline to models/best_model_pipeline.pkl
+2026-03-06 17:59:30,486 - __main__ - INFO - Saved best model to models/best_model.pkl
+2026-03-06 17:59:30,486 - __main__ - INFO - Saved scaler to models/scaler.pkl
+2026-03-06 17:59:30,486 - __main__ - INFO - Saved imputer to models/imputer.pkl
+2026-03-06 17:59:30,486 - __main__ - INFO - Saved feature names to models/feature_names.txt
+2026-03-06 17:59:30,486 - __main__ - INFO - ============================================================
+2026-03-06 17:59:30,486 - __main__ - INFO - Training Complete!
+2026-03-06 17:59:30,486 - __main__ - INFO - ============================================================
+2026-03-07 14:09:33,429 - __main__ - INFO - ============================================================
+2026-03-07 14:09:33,429 - __main__ - INFO - Starting Multi-Model Training Pipeline
+2026-03-07 14:09:33,429 - __main__ - INFO - ============================================================
+2026-03-07 14:09:33,441 - __main__ - INFO - Loaded 805 rows
+2026-03-07 14:09:33,441 - __main__ - INFO - Preparing features...
+2026-03-07 14:09:33,441 - __main__ - INFO - Selected 42 features
+2026-03-07 14:09:33,441 - __main__ - INFO - Performing sample-level grouped split...
+2026-03-07 14:09:33,444 - __main__ - INFO - Train: 635 rows, 32 samples
+2026-03-07 14:09:33,444 - __main__ - INFO - Test: 170 rows, 9 samples
+2026-03-07 14:09:33,444 - __main__ - INFO - Train class distribution:
+optimal_rounds_3class
+0    115
+1    165
+2    355
+Name: count, dtype: int64
+2026-03-07 14:09:33,444 - __main__ - INFO - Test class distribution:
+optimal_rounds_3class
+0    45
+1    35
+2    90
+Name: count, dtype: int64
+2026-03-07 14:09:33,444 - __main__ - INFO - Training XGBoost...
+2026-03-07 14:09:34,917 - __main__ - INFO - 
+XGBoost Metrics:
+2026-03-07 14:09:34,917 - __main__ - INFO -   Accuracy: 0.594
+2026-03-07 14:09:34,917 - __main__ - INFO -   Balanced Accuracy: 0.589
+2026-03-07 14:09:34,917 - __main__ - INFO -   Macro F1: 0.560
+2026-03-07 14:09:34,917 - __main__ - INFO -   MAE: 0.553
+2026-03-07 14:09:34,917 - __main__ - INFO -   Accuracy ±1: 0.853
+2026-03-07 14:09:34,917 - __main__ - INFO -   QWK: 0.476
+2026-03-07 14:09:34,917 - __main__ - INFO -   Meets targets: False
+2026-03-07 14:09:35,206 - __main__ - INFO - Saved confusion matrix to outputs/plots/cm_xgboost.png
+2026-03-07 14:09:35,479 - __main__ - INFO - Saved feature importance to outputs/plots/fi_xgboost.png
+2026-03-07 14:09:35,479 - __main__ - INFO - Training Random Forest...
+2026-03-07 14:09:36,233 - __main__ - INFO - 
+Random Forest Metrics:
+2026-03-07 14:09:36,233 - __main__ - INFO -   Accuracy: 0.629
+2026-03-07 14:09:36,234 - __main__ - INFO -   Balanced Accuracy: 0.592
+2026-03-07 14:09:36,234 - __main__ - INFO -   Macro F1: 0.568
+2026-03-07 14:09:36,234 - __main__ - INFO -   MAE: 0.482
+2026-03-07 14:09:36,234 - __main__ - INFO -   Accuracy ±1: 0.888
+2026-03-07 14:09:36,234 - __main__ - INFO -   QWK: 0.561
+2026-03-07 14:09:36,234 - __main__ - INFO -   Meets targets: False
+2026-03-07 14:09:36,396 - __main__ - INFO - Saved confusion matrix to outputs/plots/cm_random_forest.png
+2026-03-07 14:09:36,830 - __main__ - INFO - Saved feature importance to outputs/plots/fi_random_forest.png
+2026-03-07 14:09:36,830 - __main__ - INFO - Training Ordinal Regression...
+2026-03-07 14:09:38,434 - __main__ - INFO - 
+Ordinal Regression Metrics:
+2026-03-07 14:09:38,434 - __main__ - INFO -   Accuracy: 0.524
+2026-03-07 14:09:38,434 - __main__ - INFO -   Balanced Accuracy: 0.532
+2026-03-07 14:09:38,434 - __main__ - INFO -   Macro F1: 0.509
+2026-03-07 14:09:38,434 - __main__ - INFO -   MAE: 0.576
+2026-03-07 14:09:38,434 - __main__ - INFO -   Accuracy ±1: 0.900
+2026-03-07 14:09:38,434 - __main__ - INFO -   QWK: 0.458
+2026-03-07 14:09:38,434 - __main__ - INFO -   Meets targets: False
+2026-03-07 14:09:38,599 - __main__ - INFO - Saved confusion matrix to outputs/plots/cm_ordinal.png
+2026-03-07 14:09:38,599 - __main__ - INFO - Training Ensemble...
+2026-03-07 14:09:41,715 - __main__ - INFO - 
+Ensemble Metrics:
+2026-03-07 14:09:41,715 - __main__ - INFO -   Accuracy: 0.594
+2026-03-07 14:09:41,715 - __main__ - INFO -   Balanced Accuracy: 0.577
+2026-03-07 14:09:41,715 - __main__ - INFO -   Macro F1: 0.551
+2026-03-07 14:09:41,715 - __main__ - INFO -   MAE: 0.571
+2026-03-07 14:09:41,715 - __main__ - INFO -   Accuracy ±1: 0.835
+2026-03-07 14:09:41,715 - __main__ - INFO -   QWK: 0.454
+2026-03-07 14:09:41,715 - __main__ - INFO -   Meets targets: False
+2026-03-07 14:09:41,912 - __main__ - INFO - Saved confusion matrix to outputs/plots/cm_ensemble.png
+2026-03-07 14:09:41,913 - __main__ - INFO - 
+============================================================
+2026-03-07 14:09:41,913 - __main__ - INFO - MODEL COMPARISON
+2026-03-07 14:09:41,913 - __main__ - INFO - ============================================================
+2026-03-07 14:09:41,915 - __main__ - INFO - 
+             model  accuracy  balanced_accuracy  macro_f1      mae  accuracy_pm1      qwk  precision_class_1  recall_class_1  f1_class_1  support_class_1  precision_class_2  recall_class_2  f1_class_2  support_class_2  precision_class_3  recall_class_3  f1_class_3  support_class_3  meets_targets
+           XGBoost  0.594118           0.588889  0.559686 0.552941      0.852941 0.476140           0.493151        0.800000    0.610169               45           0.378378        0.400000    0.388889               35           0.850000        0.566667    0.680000               90          False
+     Random Forest  0.629412           0.591534  0.567855 0.482353      0.888235 0.561007           0.544118        0.822222    0.654867               45           0.344828        0.285714    0.312500               35           0.821918        0.666667    0.736196               90          False
+Ordinal Regression  0.523529           0.532275  0.508886 0.576471      0.900000 0.458102           0.509091        0.622222    0.560000               45           0.269841        0.485714    0.346939               35           0.846154        0.488889    0.619718               90          False
+          Ensemble  0.594118           0.577249  0.551034 0.570588      0.835294 0.454145           0.480000        0.800000    0.600000               45           0.400000        0.342857    0.369231               35           0.815385        0.588889    0.683871               90          False
+2026-03-07 14:09:41,916 - __main__ - INFO - Saved metrics to outputs/model_comparison.csv
+2026-03-07 14:09:41,917 - __main__ - INFO - Saved training metrics JSON to outputs/training_metrics.json
+2026-03-07 14:09:41,918 - __main__ - INFO - Saved split info to outputs/train_test_split_samples.json
+2026-03-07 14:09:41,918 - __main__ - INFO - Saved split info copy to outputs/train_test_split_samples.json
+2026-03-07 14:09:41,918 - __main__ - INFO - Best model: Random Forest
+2026-03-07 14:09:41,918 - __main__ - INFO -   Balanced Accuracy: 0.592
+2026-03-07 14:09:41,919 - __main__ - INFO -   Macro F1: 0.568
+2026-03-07 14:09:42,024 - __main__ - INFO - Saved model pipeline to models/best_model_pipeline.pkl
+2026-03-07 14:09:42,123 - __main__ - INFO - Saved best model to models/best_model.pkl
+2026-03-07 14:09:42,123 - __main__ - INFO - Saved scaler to models/scaler.pkl
+2026-03-07 14:09:42,123 - __main__ - INFO - Saved imputer to models/imputer.pkl
+2026-03-07 14:09:42,123 - __main__ - INFO - Saved feature names to models/feature_names.txt
+2026-03-07 14:09:42,123 - __main__ - INFO - ============================================================
+2026-03-07 14:09:42,123 - __main__ - INFO - Training Complete!
+2026-03-07 14:09:42,123 - __main__ - INFO - ============================================================
