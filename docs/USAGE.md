@@ -9,8 +9,8 @@
   - [Complete Pipeline](#complete-pipeline)
   - [Individual Steps](#individual-steps)
   - [Making Predictions](#making-predictions)
-- [Output](#output)
 - [Config](#config)
+- [Repository Structurel](#repository-structure)
 
 ---
 
@@ -111,11 +111,11 @@ busco_fragmented,busco_missing,assembly_frac,num_contigs,total_length
 
 ```csv
 Sample,Genus,Coverage,round,n50,qv,error_rate,busco_complete,busco_fragmented,busco_missing,assembly_frac,num_contigs,total_length
-sample_001,Escherichia,40,1,234567,35.2,0.082,95.3,2.1,2.6,0.987,45,4856234
-sample_001,Escherichia,40,2,345678,38.1,0.045,97.8,1.2,1.0,0.993,32,4862341
-sample_001,Escherichia,40,3,456789,39.5,0.032,98.5,0.8,0.7,0.995,28,4865123
-sample_001,Escherichia,40,4,467890,39.8,0.029,98.7,0.6,0.7,0.996,26,4866234
-sample_001,Escherichia,40,5,468901,40.0,0.028,98.8,0.5,0.7,0.996,25,4866789
+sample_001,Escherichia,40X,1,234567,35.2,0.082,95.3,2.1,2.6,0.987,45,4856234
+sample_001,Escherichia,40X,2,345678,38.1,0.045,97.8,1.2,1.0,0.993,32,4862341
+sample_001,Escherichia,40X,3,456789,39.5,0.032,98.5,0.8,0.7,0.995,28,4865123
+sample_001,Escherichia,40X,4,467890,39.8,0.029,98.7,0.6,0.7,0.996,26,4866234
+sample_001,Escherichia,40X,5,468901,40.0,0.028,98.8,0.5,0.7,0.996,25,4866789
 ```
 
 ### Column Descriptions
@@ -139,13 +139,13 @@ sample_001,Escherichia,40,5,468901,40.0,0.028,98.8,0.5,0.7,0.996,25,4866789
 ### Data Requirements
 
 - **Minimum 5 rounds per sample**: Each sample must have metrics for rounds 1-5
-- **Unique groups**: Each (sample_id, coverage) combination forms a group
+- **Unique groups**: Each (Sample, coverage) combination forms a group
 - **No missing values**: All required columns must be populated
 - **Consistent coverage labels**: use the same labels expected by the pipeline (e.g. `10X`, `20X`, `40X`, `FULL`)
 
 ### Generating Input Data
 
-To prepare the Input Data go to [BUILD_DATASET](../docs/BUILD_DATASET.md)
+To prepare the input dataset go to [BUILD_DATASET](../docs/BUILD_DATASET.md)
 
 ---
 
@@ -222,7 +222,6 @@ python 2_exploratory_analysis.py
 - `outputs/plots/metrics_by_round.png` – Metrics evolution across rounds
 - `outputs/results/eda_summary.txt` – data quality / EDA summary report
 
-outputs/results/eda_summary.txt – Data quality / EDA summary report
 **What it does:**
 - Validates data integrity
 - Checks for missing values
@@ -262,7 +261,7 @@ python 4_label_optimal_round.py
 - Applies conservative early-stop rules when R1 is already stable
 - Identifies optimal stopping round per group
 - Computes optimal round per Sample+Coverage group and maps 5→3 classes
-- Detects plateus using score improvement and a relative threshold from config.yaml
+- Detects plateaus using score improvement and a relative threshold from config.yaml
 
 
 #### Step 4: Train Models
@@ -416,40 +415,81 @@ For the full set of configurable options, see [`config.yaml`](../config.yaml).
 </details>
 
 ---
-## Output
-
-### Directory Structure
+## Repository Structure
 
 ```
-ESDP-Early-Stop-Decision-Polishing//
+
+ESDP-Early-Stop-Decision-Polishing/
+├── README.md
+├── LICENSE
+├── requirements.txt
+├── config.yaml
+├── Dockerfile
+├── docker-compose.yml
+├── docker-entrypoint.sh
+├── run_pipeline.sh
+├── run_test.sh
+│
+├── 1_csv_merge.py
+├── 2_exploratory_analysis.py
+├── 3_feature_engineering.py
+├── 4_label_optimal_round.py
+├── 5_train_models.py
+├── 7_inference_pipeline.py
+├── 8_evaluate_models.py
+├── 9_benchmark_resources.py
+├── 10_sensitivity_analysis.py
+│
+├── api_service.py
+├── esdp_cli.py
+├── esdp_decide.py
+│
+├── docs/
+│   ├── INSTALL.md
+│   ├── USAGE.md
+│   └── BUILD_DATASET.md
+│
 ├── data/
-│   ├── all_samples_polishing_metrics.csv          # Input data
-│   ├── training_dataset_with_target.csv           # Labeled data
-│   └── training_dataset_engineered.csv            # Engineered features
+│   ├── all_samples_polishing_metrics.csv
+│   ├── training_dataset_engineered.csv
+│   └── training_dataset_with_target.csv
+│
 ├── models/
-│   ├── best_model.pkl        # Best-performing model (XGBoost / RF / Ensemble / Ordinal)
-│   ├── scaler.pkl            # Fitted StandardScaler used for features
-│   └── feature_names.txt     # One feature name per line (order used for training)
+│   ├── best_model.pkl
+│   ├── best_model_pipeline.pkl
+│   ├── feature_names.txt
+│   ├── imputer.pkl
+│   └── scaler.pkl
+│
 ├── outputs/
-    ├── plots/                                # All figures (EDA + model evaluation)
-    │   ├── cm_ensemble.png                   # Confusion matrix - Ensemble
-    │   ├── cm_ordinal.png                    # Confusion matrix - Ordinal regression
-    │   ├── cm_random_forest.png              # Confusion matrix - Random Forest
-    │   ├── cm_xgboost.png                    # Confusion matrix - XGBoost
-    │   ├── correlation_matrix.png            # Feature correlation heatmap
-    │   ├── coverage_distribution.png         # Coverage distribution
-    │   ├── genus_distribution.png            # Genus distribution
-    │   ├── fi_random_forest.png              # Feature importance - Random Forest
-    │   ├── fi_xgboost.png                    # Feature importance - XGBoost
-    │   ├── improvement_distributions.png     # Distributions of metric improvements
-    │   ├── metric_distributions.png          # Distributions of base polishing metrics
-    │   └── metrics_by_round.png              # Metrics evolution across rounds
-    ├── results/
-    │   ├── eda_summary.txt                   # Data quality / EDA summary report
-    │   ├── baseline_comparison.csv           # Baseline vs model performance comparison
-    │   ├── model_comparison.csv              # Per-model metric table (XGB, RF, Ordinal, Ensemble)
-    │   └── training_metrics.json             # Same metrics as JSON (one record per model)
-    └── logs/
-        └── pipeline.log                      # Training pipeline log (INFO/WARN/ERROR)
+│   ├── plots/
+│   ├── results/
+│   ├── baseline_comparison.csv
+│   ├── baseline_comparison_table.csv
+│   ├── best_model_bootstrap_ci.json
+│   ├── eda_summary.txt
+│   ├── model_comparison.csv
+│   ├── publication_summary_table.csv
+│   ├── resource_benchmark_results.csv
+│   ├── resource_benchmark_summary.csv
+│   ├── train_test_split_samples.json
+│   └── training_metrics.json
+│
+├── dataSet_preparation/
+│   ├── subsample_reads.sh
+│   └── src/
+│       └── polish_advisor/
+│           ├── __init__.py
+│           ├── features.py
+│           ├── rstar.py
+│           ├── run_pipeline.py
+│           └── features/
+│               └── collect_metrics.py
+│
+└── test/
+    ├── conftest.py
+    ├── test_api_service.py
+    ├── test_esdp_decide.py
+    └── test_pipeline_integration.py
 
 ```
