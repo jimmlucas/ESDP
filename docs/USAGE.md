@@ -9,7 +9,7 @@
   - [Complete Pipeline](#complete-pipeline)
   - [Individual Steps](#individual-steps)
   - [Making Predictions](#making-predictions)
-- [Output](#-output)
+- [Output](#output)
 - [Config](#config)
 
 ---
@@ -122,9 +122,9 @@ sample_001,Escherichia,40,5,468901,40.0,0.028,98.8,0.5,0.7,0.996,25,4866789
 
 | Column | Description | Source | Example |
 |--------|-------------|--------|---------|
-| `sample_id` | Unique sample identifier | User-defined | sample_001 |
-| `genus` | Bacterial genus | User-defined | Escherichia |
-| `coverage` | Sequencing coverage | User-defined | 40 |
+| `Sample` | Unique sample identifier | User-defined | sample_001 |
+| `Genus` | Bacterial genus | User-defined | Escherichia |
+| `Coverage` | Sequencing coverage group | User-defined | 40X |
 | `round` | Polishing round (1-5) | Sequential | 3 |
 | `n50` | N50 contig length | QUAST | 456789 |
 | `qv` | Consensus quality value | QUAST | 39.5 |
@@ -141,7 +141,7 @@ sample_001,Escherichia,40,5,468901,40.0,0.028,98.8,0.5,0.7,0.996,25,4866789
 - **Minimum 5 rounds per sample**: Each sample must have metrics for rounds 1-5
 - **Unique groups**: Each (sample_id, coverage) combination forms a group
 - **No missing values**: All required columns must be populated
-- **Consistent coverage labels**: Use 10, 20, 40 (or your actual coverages)
+- **Consistent coverage labels**: use the same labels expected by the pipeline (e.g. `10X`, `20X`, `40X`, `FULL`)
 
 ### Generating Input Data
 
@@ -331,10 +331,10 @@ python 7_inference_pipeline.py \
 **Prediction output format:**
 
 ```csv
-sample_id,coverage,predicted_class,predicted_strategy,confidence,recommended_rounds
-sample_001,40,1,Early,0.87,2
-sample_002,20,2,Medium,0.65,3
-sample_003,10,3,Late,0.91,5
+Sample,Coverage,predicted_class,predicted_strategy,confidence,recommended_rounds,rationale,warnings
+sample_001,40X,1,Early,0.87,2,High R1 quality and stable convergence,
+sample_002,20X,2,Medium,0.65,3,Moderate improvement still detected,low_confidence
+sample_003,10X,3,Late,0.91,5,Continued polishing recommended,
 ```
 
 ### Config
@@ -345,77 +345,73 @@ Edit `config.yaml` to customize:
 <summary>Click to see key configuration options</summary>
 
 ```yaml
-# Class Configuration (CRITICAL IMPROVEMENT: 3-class system)
+# Data paths
+data:
+  input_csv: "data/all_samples_polishing_metrics.csv"
+  merged_csv: "data/all_samples_polishing_metrics.csv"
+  labeled_csv: "data/training_dataset_with_target.csv"
+  engineered_csv: "data/training_dataset_engineered.csv"
+
+# Class configuration
 classes:
   n_classes: 3
   class_mapping:
-    1: "Early (R1-R2)"  # Stop early: rounds 1-2
-    2: "Medium (R3-R4)"  # Stop mid-way: rounds 3-4
-    3: "Late (R5)"      # Continue to end: round 5
-  
-# Model Training Configuration
+    1: "Early (R1-R2)"
+    2: "Medium (R3-R4)"
+    3: "Late (R5)"
+
+# R1 quality thresholds
+r1_thresholds:
+  min_busco: 95.0
+  max_assembly_error: 0.02
+  max_error_rate: 0.07
+  min_coverage_est: 8.0
+  max_align_err_cons: 0.15
+
+# Stability thresholds
+stability:
+  eps_qv: 0.05
+  eps_error: 0.0005
+  eps_busco: 1.0
+  eps_assembly_frac: 0.01
+  use_assembly_frac: false
+
+# Plateau detection
+plateau:
+  relative_threshold: 0.12
+
+# Model configuration
 models:
   random_state: 42
   test_size: 0.20
   cv_folds: 5
-  
-  # XGBoost Configuration
-  xgboost:
-    n_estimators: 500
-    max_depth: 6
-    learning_rate: 0.05
-    subsample: 0.8
-    colsample_bytree: 0.8
-    min_child_weight: 3
-    gamma: 0.1
-    reg_alpha: 0.1
-    reg_lambda: 1.0
-  
-  # Random Forest Configuration
-  random_forest:
-    n_estimators: 800
-    max_depth: 12
-    min_samples_leaf: 2
-    max_features: "sqrt"
-  
-  # Ordinal Regression Configuration
-  ordinal_regression:
-    alpha: 1.0
 
-# Imbalance Handling
+# Imbalance handling
 imbalance:
   use_smote: true
   smote_k_neighbors: 3
   smote_sampling_strategy: "auto"
-  
-  # Class weights
-  class_weights:
-    1: 2.0   # Early - boost minority
-    2: 1.5   # Medium
-    3: 1.0   # Late - most common
 
-# Evaluation Metrics
+# Evaluation
 evaluation:
   primary_metric: "balanced_accuracy"
-  target_metrics:
-    balanced_accuracy: 0.65
-    macro_f1: 0.60
-    min_class_recall: 0.40
-    mae: 0.5
-    qwk: 0.50
 
-# Hierarchical Policy (3-class version)
+# Hierarchical policy
 hierarchical:
   stage_a:
-    # Binary: Early (1) vs Continue (2-3)
     threshold: 0.5
     model: "logistic_regression"
-  
   stage_b:
-    # Binary: Medium (2) vs Late (3)
     model: "random_forest"
 
+# Post-processing
+postprocessing:
+  conservative_bias: true
+  smooth_predictions: true
+  use_domain_rules: true
 ```
+
+For the full set of configurable options, see [`config.yaml`](../config.yaml).
 
 </details>
 
@@ -425,7 +421,7 @@ hierarchical:
 ### Directory Structure
 
 ```
-ont-polishing-optimizer/
+ESDP-Early-Stop-Decision-Polishing//
 ├── data/
 │   ├── all_samples_polishing_metrics.csv          # Input data
 │   ├── training_dataset_with_target.csv           # Labeled data

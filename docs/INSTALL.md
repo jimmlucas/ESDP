@@ -75,4 +75,6 @@ plotly>=5.0.0
 # Optional
 shap>=0.40.0
 optuna>=2.10.0
+
 ```
+</details>
