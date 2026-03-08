@@ -1,43 +1,52 @@
-## ESDP Installation
+## Installation
 
 ### Prerequisites
 
-- **Python**: 3.8 or higher  
-- **Operating System**: Linux, macOS  
-- **RAM**: Minimum 8GB recommended  
-- **Storage**: ~3GB for dependencies and models  
+- **Python**: 3.8 or higher
+- **Operating System**: Linux or macOS
+- **RAM**: 8 GB recommended
+- **Storage**: additional space required for dependencies, model artifacts, and benchmark outputs
 
 ---
 
-### Install with pip (Recommended)
+### Install with pip
 
 ```bash
 # Clone the repository
 git clone https://github.com/jimmlucas/ESDP-Early-Stop-Decision-Polishing.git
 cd ESDP-Early-Stop-Decision-Polishing
 
-# Create virtual environment (recommended)
+# Create a virtual environment
 python -m venv venv
-source venv/bin/activate  # On Windows (WSL): source venv/bin/activate
+
+# Activate the environment
+source venv/bin/activate
+# On Windows:
+# venv\Scripts\activate
 
 # Install dependencies
 pip install -r requirements.txt
+
+# Verify installation
+python -c "import sklearn, pandas, joblib; print('Installation successful')"
 
 ```
 
 ### Setup with conda
 
 ```bash
+
 # Clone the repository
 git clone https://github.com/jimmlucas/ESDP-Early-Stop-Decision-Polishing.git
 cd ESDP-Early-Stop-Decision-Polishing
 
-# Create conda environment
+# Create the conda environment
 conda env create -f environment.yml
 conda activate ont-polishing
 
 # Verify installation
-python -c "import xgboost, sklearn, pandas; print('✓ Installation successful')"
+python -c "import sklearn, pandas, joblib; print('Installation successful')"
+
 ```
 
 ### Dependencies
@@ -46,26 +55,24 @@ python -c "import xgboost, sklearn, pandas; print('✓ Installation successful')
 <summary>Click to see full dependency list</summary>
 
 ```
-# Core ML Libraries
+# Core libraries
 numpy>=1.20.0
 pandas>=1.3.0
 scikit-learn>=1.0.0
+joblib>=1.0.0
+pyyaml>=5.4.0
+
+# Model development and evaluation
 xgboost>=1.5.0
 imbalanced-learn>=0.9.0
-
-# Ordinal Classification
 mord>=0.6
 
-# Visualization
+# Visualization and analysis
 matplotlib>=3.4.0
 seaborn>=0.11.0
 plotly>=5.0.0
 
-# Configuration & Utilities
-pyyaml>=5.4.0
-joblib>=1.0.0
-
-# Optional (for extended features)
-shap>=0.40.0      # For model interpretability
-optuna>=2.10.0    # For hyperparameter tuning
+# Optional
+shap>=0.40.0
+optuna>=2.10.0
 ```
