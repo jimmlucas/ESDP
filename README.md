@@ -6,6 +6,7 @@
 [![Python](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![Docker Hub](https://img.shields.io/badge/docker-jimmlucas%2Fesdp-blue)](https://hub.docker.com/r/jimmlucas/esdp)
 [![Version](https://img.shields.io/badge/version-v1.0.2-success.svg)](https://github.com/jimmlucas/ESDP/releases/tag/v1.0.2)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18910597.svg)](https://doi.org/10.5281/zenodo.18910597)
 
 > **Stop polishing when it matters, not when it is scheduled**
 
@@ -288,21 +289,21 @@ ESDP builds on the following core tools and libraries:
 - [Docker](https://www.docker.com/) - containerized deployment
 
 ---
-
 ## Citation
 
-If you use ESDP in your research, please cite the software repository and, when available, the archived Zenodo release.
+If you use ESDP in your research, please cite the archived Zenodo release:
 
 ```bibtex
-@software{lucas_esdp,
-  author       = {Jimmy Lucas and Rodrigo de Pablo},
+@software{lucas_esdp_2026,
+  author       = {Jimmy Lucas and Roger de Pedro},
   title        = {ESDP: Early Stop Decision Polishing},
   year         = {2026},
-  url          = {https://github.com/jimmlucas/ESDP-Early-Stop-Decision-Polishing},
-  version      = {v1.0.2}
+  publisher    = {Zenodo},
+  version      = {v1.0.2},
+  doi          = {10.5281/zenodo.18910597},
+  url          = {https://doi.org/10.5281/zenodo.18910597}
 }
 ```
-
 ---
 
 ## Acknowledgments
