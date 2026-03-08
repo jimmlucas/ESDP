@@ -192,23 +192,6 @@ On the held-out sample-level test set, the selected **Random Forest** model achi
 
 Class-wise performance was strongest for the early and late stopping categories, while the intermediate class remained the most difficult to resolve. For Random Forest, recall was **0.822** for class 1, **0.286** for class 2, and **0.667** for class 3. 
 
-### Baseline comparison
-
-ESDP was compared against three baseline decision strategies on the held-out test set:
-
-- **Always Late** (fixed five-round polishing)
-- **QV-threshold rule**
-- **R1-only Random Forest**
-
-| Strategy | Balanced Accuracy | Macro-F1 | MAE | QWK |
-|----------|------------------:|---------:|----:|----:|
-| **ESDP (final model)** | **0.592** | 0.568 | 0.482 | **0.561** |
-| Always Late | 0.333 | 0.231 | 0.735 | 0.000 |
-| QV Threshold | 0.333 | 0.231 | 0.735 | 0.000 |
-| R1-only RF | 0.566 | **0.571** | **0.465** | 0.538 |
-
-These comparisons show that ESDP substantially outperforms fixed or naive strategies, while also confirming that first-round metrics alone already contain strong predictive information. The full framework retained the best overall balanced accuracy and quadratic weighted kappa.
-
 ### Practical benchmark
 
 Across 34 valid test trajectories derived from 9 held-out samples, ESDP achieved:
