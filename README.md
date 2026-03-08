@@ -3,9 +3,9 @@
 ### Early Stop Decision Polishing for Oxford Nanopore Bacterial Genome Polishing
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![Status](https://img.shields.io/badge/status-active-success.svg)]()
-[![Docker](https://img.shields.io/badge/docker-ready-blue.svg)]()
+[![Python](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
+[![Docker Hub](https://img.shields.io/badge/docker-jimmlucas%2Fesdp-blue)](https://hub.docker.com/r/jimmlucas/esdp)
+[![Version](https://img.shields.io/badge/version-v1.0.2-success.svg)](https://github.com/jimmlucas/ESDP/releases/tag/v1.0.2)
 
 > **Stop polishing when it matters, not when it is scheduled**
 
