@@ -1,53 +1,24 @@
 # Python
 __pycache__/
 *.py[cod]
-*$py.class
 
-# Virtual environments
-venv/
-.venv/
-env/
-ENV/
+# macOS
+.DS_Store
 
-# Test and coverage
-.pytest_cache/
+# Coverage / tests
 .coverage
 .coverage.*
 htmlcov/
 .pytest_cache/
-.cache/
-
-# Jupyter
-.ipynb_checkpoints/
-
-# macOS
-.DS_Store
 
 # Logs
 logs/
 *.log
 
-# Editor / IDE
+# Editors
 .vscode/
 .idea/
 
-# Local environment files
-.env
-.env.*
-
-# Build / packaging
-build/
-dist/
-*.egg-info/
-
-# Temporary files
-tmp/
-temp/
-*.tmp
-
-# OS files
-Thumbs.db
-
-# Optional: generated runtime artifacts
+# Temporary/local artifacts
 decision.json
 test.json
