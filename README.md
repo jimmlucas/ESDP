@@ -23,14 +23,16 @@
 - [Build Dataset](docs/BUILD_DATASET.md)
 - [Usage](docs/USAGE.md)
 - [Overview](#overview)
-  - [Problem Formulation](#problem-statement)
+  - [Problem Formulation](#problem-formulation)
   - [Key Features](#key-features)
   - [Performance Highlights](#performance-highlights)
   - [Model Details](#model-details)
+- [Tools & Dependencies](#tools--dependencies)
 - [Citation](#citation)
 - [Acknowledgments](#acknowledgments)
 - [Contact](#contact)
 - [License](#license)
+- [Limitations](#limitations)
 - [Future Improvements](#future-improvements)
 - [References](#references)
 
@@ -96,16 +98,6 @@ A key design principle of ESDP is that model prediction and deployment-time deci
 
 This design makes ESDP more suitable for practical workflow integration than a classifier alone.
 
-### 3. Model development and robustness
-
-To support reliable stopping recommendations, ESDP evaluates multiple supervised learning approaches during development, including XGBoost, Random Forest, ordinal regression, and ensemble configurations. This comparison framework was used to assess predictive performance across exact classification, ordinal agreement, and error minimization. 
-
-Among the candidate models, **Random Forest** achieved the best overall balance on the held-out sample-level test set and was therefore selected as the final model for downstream benchmarking and deployment. 
-
-### 4. Leakage-aware evaluation
-
-Because multiple polishing records can be derived from the same biological isolate across rounds and coverage groups, random row-level splitting would risk information leakage. ESDP therefore uses **sample-level grouping** during training and evaluation so that held-out predictions reflect genuinely unseen isolates rather than repeated observations from the same sample. In the current benchmark, this resulted in a split of **32 training samples** and **9 held-out test samples**. 
-
 ---
 
 ## Key Features
@@ -168,7 +160,7 @@ The evaluation workflow generates standardized artifacts for inspection and reus
 - feature-importance visualizations
 - comparative performance summaries
 
-These outputs support reproducibility, model inspection, and downstream benchmarking. :contentReference[oaicite:11]{index=11}
+These outputs support reproducibility, model inspection, and downstream benchmarking.
 
 ---
 
@@ -215,7 +207,7 @@ ESDP was compared against three baseline decision strategies on the held-out tes
 | QV Threshold | 0.333 | 0.231 | 0.735 | 0.000 |
 | R1-only RF | 0.566 | **0.571** | **0.465** | 0.538 |
 
-These comparisons show that ESDP substantially outperforms fixed or naive strategies, while also confirming that first-round metrics alone already contain strong predictive information. The full framework retained the best overall balanced accuracy and quadratic weighted kappa. :contentReference[oaicite:14]{index=14}
+These comparisons show that ESDP substantially outperforms fixed or naive strategies, while also confirming that first-round metrics alone already contain strong predictive information. The full framework retained the best overall balanced accuracy and quadratic weighted kappa.
 
 ### Practical benchmark
 
@@ -292,7 +284,7 @@ To assess practical value, ESDP was compared against three baseline decision str
 | QV Threshold | 0.333 | 0.231 | 0.735 | 0.000 |
 | R1-only RF | 0.566 | **0.571** | **0.465** | 0.538 |
 
-These comparisons show that ESDP clearly outperforms naive fixed or heuristic strategies, while also indicating that first-round signals already contain substantial predictive information. The full ESDP framework retained the best overall balanced accuracy and quadratic weighted kappa. 
+These comparisons show that ESDP clearly outperforms naive fixed or heuristic strategies, while also indicating that first-round signals already contain substantial predictive information. The full ESDP framework retained the best overall balanced accuracy and quadratic weighted kappa.
 
 ---
 ## Tools & Dependencies
