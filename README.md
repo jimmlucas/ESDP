@@ -20,11 +20,10 @@
 ## Table of Contents
 
 - [Installation](docs/INSTALL.md)
-- [Build Data-Set](docs/BUILD_DATASET.md)
+- [Build Dataset](docs/BUILD_DATASET.md)
 - [Usage](docs/USAGE.md)
 - [Overview](#overview)
-  - [Problem Statement](#problem-statement)
-  - [Our Solution](#our-solution)
+  - [Problem Formulation](#problem-statement)
   - [Key Features](#key-features)
   - [Performance Highlights](#performance-highlights)
   - [Model Details](#model-details)
@@ -43,11 +42,11 @@ Oxford Nanopore sequencing enables high-contiguity bacterial genome assemblies, 
 
 ESDP is a machine learning-based decision-support framework designed to recommend whether polishing can stop early or should continue. Rather than predicting exact polishing rounds directly for deployment, ESDP combines statistical prediction with explicit operational safeguards to produce conservative and transparent stopping recommendations.
 
-The framework was developed and evaluated on 805 polishing records derived from 41 bacterial samples spanning 9 genera, five polishing rounds, and four coverage groups (10X, 20X, 40X, and FULL). To avoid information leakage, evaluation was performed with sample-level separation, using 32 training samples and 9 held-out test samples. :contentReference[oaicite:1]{index=1}
+The framework was developed and evaluated on 805 polishing records derived from 41 bacterial samples spanning 9 genera, five polishing rounds, and four coverage groups (10X, 20X, 40X, and FULL). To avoid information leakage, evaluation was performed with sample-level separation, using 32 training samples and 9 held-out test samples.
 
-ESDP supports both command-line and service-based use. The software includes a REST API implemented with FastAPI, containerized deployment, reproducible model artifacts, and dedicated verification scripts for decision logic, API behavior, benchmarking, and sensitivity analysis. :contentReference[oaicite:2]{index=2}
+ESDP supports both command-line and service-based use. The software includes a REST API implemented with FastAPI, containerized deployment, reproducible model artifacts, and dedicated verification scripts for decision logic, API behavior, benchmarking, and sensitivity analysis.
 
-In the current benchmark, Random Forest was selected as the final model for downstream deployment and benchmarking based on its overall balance across exact classification, ordinal agreement, and error minimization on the held-out test set. :contentReference[oaicite:3]{index=3}
+In the current benchmark, Random Forest was selected as the final model for downstream deployment and benchmarking based on its overall balance across exact classification, ordinal agreement, and error minimization on the held-out test set.
 
 ### Why ESDP?
 
@@ -96,6 +95,7 @@ A key design principle of ESDP is that model prediction and deployment-time deci
 - optional forced-conservative operation
 
 This design makes ESDP more suitable for practical workflow integration than a classifier alone.
+
 ### 3. Model development and robustness
 
 To support reliable stopping recommendations, ESDP evaluates multiple supervised learning approaches during development, including XGBoost, Random Forest, ordinal regression, and ensemble configurations. This comparison framework was used to assess predictive performance across exact classification, ordinal agreement, and error minimization. 
@@ -217,6 +217,18 @@ ESDP was compared against three baseline decision strategies on the held-out tes
 
 These comparisons show that ESDP substantially outperforms fixed or naive strategies, while also confirming that first-round metrics alone already contain strong predictive information. The full framework retained the best overall balanced accuracy and quadratic weighted kappa. :contentReference[oaicite:14]{index=14}
 
+### Practical benchmark
+
+Across 34 valid test trajectories derived from 9 held-out samples, ESDP achieved:
+
+- **0.60 CPU-hours saved per trajectory** on average (95% CI: 0.44–0.76)
+- **44.71% mean CPU reduction** (95% CI: 32.94–56.50)
+- **33/34 trajectories with zero QV loss** (97.1%)
+- **34/34 trajectories within the predefined acceptable loss range** (100.0%)
+- **200.17% mean efficiency gain** relative to fixed five-round polishing
+
+These results indicate that ESDP can provide practical computational savings while preserving assembly quality in the evaluated benchmark setting.
+
 ---
 ## Model Details
 
@@ -326,8 +338,7 @@ construct the benchmark dataset.
 ## Contact
 
 ### Maintainer
-- GitHub: [@jimmlycas](https://github.com/jimmlucas)
-- Website: [LinkedIn](https://www.linkedin.com/in/jimmlucas)
+- GitHub: [@jimmlucas](https://github.com/jimmlucas)
 
 ### Issues & Support
 
@@ -347,37 +358,26 @@ ESDP is released under the MIT License. See the LICENSE file for details.
 ## Limitations
 
 Current limitations of ESDP include:
-The benchmark dataset comprises 805 polishing records derived from 41 bacterial samples, so the effective
-biological diversity represented during development remains limited.
-The current evaluation was performed under a specific Oxford Nanopore + Flye polishing configuration, and
-performance may differ across other assemblers, polishers, sequencing conditions, or species distributions.
-The intermediate stopping category remains the most difficult to resolve, indicating that transitional polishing
-states are less separable than clear early or late stopping scenarios.
-ESDP requires the availability of the expected assembly-quality metrics and feature inputs used by the trained
-pipeline.
+
+1. The benchmark dataset comprises 805 polishing records derived from 41 bacterial samples, so the effective biological diversity represented during development remains limited.
+2. The current evaluation was performed under a specific Oxford Nanopore + Flye polishing configuration, and performance may differ across other assemblers, polishers, sequencing conditions, or species distributions.
+3. The intermediate stopping category remains the most difficult to resolve, indicating that transitional polishing states are less separable than clear early or late stopping scenarios.
+4. ESDP requires the availability of the expected assembly-quality metrics and feature inputs used by the trained pipeline.
 
 ---
 ## Future Improvements
 
 Planned directions for future development include:
-Broader external validation across additional bacterial genera, coverage regimes, and polishing workflows
-Recalibration of confidence thresholds for different operational settings
-Incorporation of richer early-round features to improve transitional-state detection
-Exploration of alternative decision architectures for more robust medium-class recommendations
-Prospective evaluation in routine deployment settings
+
+1. Broader external validation across additional bacterial genera, coverage regimes, and polishing workflows.
+2. Recalibration of confidence thresholds for different operational settings.
+3. Incorporation of richer early-round features to improve transitional-state detection.
+4. Exploration of alternative decision architectures for more robust medium-class recommendations.
+5. Prospective evaluation in routine deployment settings.
 
 ---
 
 ## References
-
-### Related Tools
-
-- **[Racon](https://github.com/isovic/racon)** - Ultrafast consensus module for raw de novo genome assembly
-- **[Medaka](https://github.com/nanoporetech/medaka)** - Neural network-based polishing for ONT
-- **[Pilon](https://github.com/broadinstitute/pilon)** - Automated genome assembly improvement tool
-- **[QUAST](http://quast.sourceforge.net/)** - Quality assessment tool for genome assemblies
-- **[BUSCO](https://busco.ezlab.org/)** - Assessing genome assembly completeness
-- **[Flye](https://github.com/mikolmogorov/Flye)** -Assembler for single-molecule sequencing reads
 
 1. **Flye**  
    Kolmogorov M, Yuan J, Lin Y, Pevzner PA. Assembly of long, error-prone reads using repeat graphs. *Nat Biotechnol.* 2019;37(5):540-546.
