@@ -1,19 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-8_evaluate_models.py - Evaluación formal y comparación con baselines.
-
-CORREGIDO:
-- Evita data leakage evaluando con split por Sample (no Sample+Coverage)
-- Reutiliza exactamente el mismo split guardado por 5_train_models.py si existe
-- Carga best_model_pipeline.pkl (imputer + scaler + model)
-- Calcula métricas completas en test
-- Compara contra baselines:
-    * Baseline 1: siempre clase Late (clase 3 -> índice 2)
-    * Baseline 2: umbral de QV (Early si QV > 30, si no Late)
-    * Baseline 3: Random Forest usando features derivadas de R1
-- Calcula intervalos de confianza por bootstrap
-- Guarda resultados en outputs/baseline_comparison.csv
+8_evaluate_models.py - Formal evaluation and comparison with baseline strategies.
 """
 
 import json
@@ -38,7 +26,7 @@ from sklearn.metrics import (
 )
 
 # -----------------------------------------------------------------------------
-# Config y logging
+# Config and logging
 # -----------------------------------------------------------------------------
 
 with open("config.yaml", "r") as f:
@@ -54,13 +42,12 @@ logger = logging.getLogger("evaluate_models")
 
 RANDOM_STATE = config["models"]["random_state"]
 
-
 # -----------------------------------------------------------------------------
-# Utilidades de datos
+# Data utilities
 # -----------------------------------------------------------------------------
 
 def load_data() -> pd.DataFrame:
-    """Carga el dataset etiquetado."""
+    """Load the labeled dataset."""
     df = pd.read_csv(config["data"]["labeled_csv"])
     logger.info(f"Loaded {len(df)} rows")
     return df
@@ -68,16 +55,17 @@ def load_data() -> pd.DataFrame:
 
 def prepare_features(df: pd.DataFrame):
     """
-    Construye X, y y groups de forma coherente con 5_train_models.py.
+    Build X, y and groups consistently with 5_train_models.py.
 
-    - X: columnas usadas por el modelo entrenado (feature_names.txt)
-    - y: optimal_rounds_3class recodificada a 0,1,2
-    - groups: Sample (para evitar leakage entre coberturas de la misma muestra)
+    - X: columns used by the trained model (feature_names.txt)
+    - y: optimal_rounds_3class recoded to 0,1,2
+    - groups: Sample (to avoid leakage across coverages from the same isolate)
     """
     feature_path = Path(config["outputs"]["models_dir"]) / "feature_names.txt"
     if not feature_path.exists():
         raise FileNotFoundError(
-            f"No se encontró {feature_path}. Ejecuta primero 5_train_models.py."
+            f"feature_names.txt not found at {feature_path}. "
+            f"Run 5_train_models.py first."
         )
 
     feature_names = [
@@ -90,21 +78,22 @@ def prepare_features(df: pd.DataFrame):
     missing = [f for f in feature_names if f not in df.columns]
     if missing:
         raise ValueError(
-            "Las siguientes features del modelo no están en el CSV etiquetado: "
+            "The following model features are missing from the labeled CSV: "
             + ", ".join(missing)
         )
 
     X = df[feature_names].copy()
 
     if "optimal_rounds_3class" not in df.columns:
-        raise ValueError("3-class labels not found! Run 4_label_optimal_round.py first")
+        raise ValueError("3-class labels not found. Run 4_label_optimal_round.py first.")
 
-    y = df["optimal_rounds_3class"].copy() - 1  # 1,2,3 -> 0,1,2
+    # Map classes 1,2,3 -> 0,1,2
+    y = df["optimal_rounds_3class"].copy() - 1
 
-    # CRÍTICO: split por Sample
+    # Critical: group split by Sample
     groups = df["Sample"].astype(str)
 
-    # Coherente con training: infinitos -> NaN
+    # Consistent with training: infinities -> NaN
     X = X.replace([np.inf, -np.inf], np.nan)
 
     return X, y, groups, feature_names
@@ -112,8 +101,8 @@ def prepare_features(df: pd.DataFrame):
 
 def grouped_sample_split(X, y, groups, test_size=0.2, random_state=42):
     """
-    Split por Sample para evitar leakage entre coberturas derivadas
-    del mismo aislado.
+    Split by Sample to avoid leakage between coverages
+    derived from the same isolate.
     """
     logger.info("Performing sample-level grouped split...")
 
@@ -143,8 +132,8 @@ def grouped_sample_split(X, y, groups, test_size=0.2, random_state=42):
 
 def load_saved_split(groups: pd.Series):
     """
-    Carga el split guardado por 5_train_models.py si existe.
-    Devuelve train_groups y test_groups o (None, None) si no existe.
+    Load the train/test split saved by 5_train_models.py, if it exists.
+    Returns train_groups and test_groups or (None, None) if not found.
     """
     split_info_path = Path(config["outputs"]["results_dir"]) / "train_test_split_samples.json"
 
@@ -172,7 +161,7 @@ def load_saved_split(groups: pd.Series):
 
 
 def apply_saved_split(X, y, groups, train_groups, test_groups):
-    """Aplica un split guardado previamente."""
+    """Apply a previously saved sample-level split."""
     train_mask = groups.isin(train_groups)
     test_mask = groups.isin(test_groups)
 
@@ -189,13 +178,12 @@ def apply_saved_split(X, y, groups, train_groups, test_groups):
 
     return X_train, X_test, y_train, y_test
 
-
 # -----------------------------------------------------------------------------
-# Métricas
+# Metrics
 # -----------------------------------------------------------------------------
 
 def calculate_metrics(y_true, y_pred, model_name="Model"):
-    """Calcula métricas completas."""
+    """Compute full set of evaluation metrics."""
     acc = accuracy_score(y_true, y_pred)
     balanced_acc = balanced_accuracy_score(y_true, y_pred)
     macro_f1 = f1_score(y_true, y_pred, average="macro", zero_division=0)
@@ -232,7 +220,7 @@ def calculate_metrics(y_true, y_pred, model_name="Model"):
         and (qwk >= targets["qwk"])
     )
 
-    logger.info(f"\n{model_name} Metrics:")
+    logger.info(f"\n{model_name} metrics:")
     logger.info(f"  Accuracy: {acc:.3f}")
     logger.info(f"  Balanced Accuracy: {balanced_acc:.3f}")
     logger.info(f"  Macro F1: {macro_f1:.3f}")
@@ -245,7 +233,7 @@ def calculate_metrics(y_true, y_pred, model_name="Model"):
 
 
 def _core_metrics(y_true, y_pred):
-    """Métricas núcleo sin logging para bootstrap."""
+    """Core metrics without logging (for bootstrap)."""
     y_true = np.asarray(y_true)
     y_pred = np.asarray(y_pred)
 
@@ -257,7 +245,7 @@ def _core_metrics(y_true, y_pred):
 
 
 def bootstrap_ci(y_true, y_pred, n_bootstrap=1000, random_state=42):
-    """Bootstrap para balanced accuracy, macro-F1 y MAE."""
+    """Bootstrap CIs for balanced accuracy, macro-F1 and MAE."""
     rng = np.random.RandomState(random_state)
     y_true = np.asarray(y_true)
     y_pred = np.asarray(y_pred)
@@ -287,27 +275,26 @@ def bootstrap_ci(y_true, y_pred, n_bootstrap=1000, random_state=42):
         "mae": _summary(mae_vals),
     }
 
-
 # -----------------------------------------------------------------------------
 # Baselines
 # -----------------------------------------------------------------------------
 
 def predict_by_qv(X_test: pd.DataFrame, threshold: float = 30.0) -> np.ndarray:
     """
-    Baseline por QV.
-    Usa qv si existe entre las features seleccionadas.
+    QV-threshold baseline.
+    Uses qv if present among the selected features.
     """
     if "qv" not in X_test.columns:
-        raise ValueError("No se encontró la feature 'qv' en X_test")
+        raise ValueError("Feature 'qv' not found in X_test")
 
     qv_vals = X_test["qv"].values
-    return np.where(qv_vals > threshold, 0, 2)  # 0=Early, 2=Late
+    return np.where(qv_vals > threshold, 0, 2)  # 0 = Early, 2 = Late
 
 
 def get_r1_features(feature_names, X_train_columns):
     """
-    Selecciona un subconjunto razonable de features ligadas a R1
-    para el baseline R1-only.
+    Select a reasonable subset of R1-related features
+    for the R1-only baseline.
     """
     r1_features = [
         c for c in feature_names
@@ -325,22 +312,21 @@ def get_r1_features(feature_names, X_train_columns):
     r1_features = [f for f in r1_features if f in X_train_columns]
     return r1_features
 
-
 # -----------------------------------------------------------------------------
-# Pipeline principal
+# Main pipeline
 # -----------------------------------------------------------------------------
 
 def main():
     logger.info("=" * 60)
-    logger.info("Evaluación formal del mejor modelo y baselines")
+    logger.info("Formal evaluation of best model and baselines")
     logger.info("=" * 60)
 
-    # 1) Cargar datos y preparar features
+    # 1) Load data and prepare features
     df = load_data()
     X, y, groups, feature_names = prepare_features(df)
-    logger.info(f"Total filas: {len(X)} - Features: {len(feature_names)}")
+    logger.info(f"Total rows: {len(X)} - Features: {len(feature_names)}")
 
-    # 2) Reusar exactamente el split de training si existe
+    # 2) Reuse exactly the same split used during training, if available
     train_groups, test_groups = load_saved_split(groups)
 
     if train_groups is not None and test_groups is not None:
@@ -353,23 +339,23 @@ def main():
             X, y, groups, test_size=test_size, random_state=RANDOM_STATE
         )
 
-    # 3) Cargar pipeline completo
+    # 3) Load full pipeline
     models_dir = Path(config["outputs"]["models_dir"])
     pipeline_path = models_dir / "best_model_pipeline.pkl"
 
     if not pipeline_path.exists():
         raise FileNotFoundError(
-            f"No se encontró {pipeline_path}. Ejecuta primero 5_train_models.py."
+            f"{pipeline_path} not found. Run 5_train_models.py first."
         )
 
     pipeline = joblib.load(pipeline_path)
-    logger.info(f"Cargado pipeline completo desde {pipeline_path}")
+    logger.info(f"Loaded full pipeline from {pipeline_path}")
 
-    # 4) Evaluar modelo principal
+    # 4) Evaluate main model
     y_pred_model = pipeline.predict(X_test)
     metrics_model = calculate_metrics(y_test, y_pred_model, model_name="Best_Model")
 
-    # 5) Baseline 1: siempre Late
+    # 5) Baseline 1: always Late
     y_baseline_late = np.full(shape=len(y_test), fill_value=2, dtype=int)
     metrics_late = calculate_metrics(
         y_test,
@@ -377,7 +363,7 @@ def main():
         model_name="Baseline_Always_Late",
     )
 
-    # 6) Baseline 2: umbral de QV
+    # 6) Baseline 2: QV threshold
     try:
         y_baseline_qv = predict_by_qv(X_test, threshold=30.0)
         metrics_qv = calculate_metrics(
@@ -386,19 +372,18 @@ def main():
             model_name="Baseline_QV_Threshold_30",
         )
     except ValueError as e:
-        logger.warning(f"No se pudo calcular baseline QV: {e}")
+        logger.warning(f"Could not compute QV-threshold baseline: {e}")
         metrics_qv = None
 
-    # 7) Baseline 3: RF con features derivadas de R1
+    # 7) Baseline 3: R1-only Random Forest
     r1_features = get_r1_features(feature_names, X_train.columns)
 
     if len(r1_features) == 0:
-        logger.warning("No hay suficientes features tipo R1 para el baseline R1-only. Se omite.")
+        logger.warning("No suitable R1-type features for R1-only baseline. Skipping.")
         metrics_r1 = None
     else:
-        logger.info(f"Baseline R1-only usando {len(r1_features)} features: {r1_features}")
+        logger.info(f"R1-only baseline using {len(r1_features)} features: {r1_features}")
 
-        # Coherente con training: imputar + escalar, sin fillna(0)
         imputer_r1 = SimpleImputer(strategy="median")
         scaler_r1 = StandardScaler()
 
@@ -424,8 +409,8 @@ def main():
             model_name="Baseline_R1_Only_RF",
         )
 
-    # 8) Bootstrap para modelo principal
-    logger.info("Calculando intervalos de confianza por bootstrap...")
+    # 8) Bootstrap CIs for main model
+    logger.info("Computing bootstrap confidence intervals...")
     ci = bootstrap_ci(y_test, y_pred_model, n_bootstrap=1000, random_state=RANDOM_STATE)
 
     logger.info("\n" + "=" * 60)
@@ -437,7 +422,7 @@ def main():
             f"CI95%=[{stats['ci_lower']:.4f}, {stats['ci_upper']:.4f}]"
         )
 
-    # 9) Guardar resultados
+    # 9) Save results to CSV and JSON
     rows = [metrics_model, metrics_late]
     if metrics_qv is not None:
         rows.append(metrics_qv)
@@ -452,21 +437,74 @@ def main():
     out_path = out_dir / "baseline_comparison.csv"
     results_df.to_csv(out_path, index=False)
 
-    # Guardar bootstrap CI
     ci_path = out_dir / "best_model_bootstrap_ci.json"
     with open(ci_path, "w") as f:
         json.dump(ci, f, indent=2)
 
     logger.info("\n" + "=" * 60)
-    logger.info("RESUMEN COMPARATIVO (modelo vs baselines)")
+    logger.info("COMPARISON SUMMARY (model vs baselines)")
     logger.info("=" * 60)
     logger.info(
         "\n" + results_df[
             ["model", "balanced_accuracy", "macro_f1", "mae", "qwk"]
         ].to_string(index=False)
     )
-    logger.info(f"\nGuardado baseline_comparison.csv en {out_path}")
-    logger.info(f"Guardado bootstrap CI en {ci_path}")
+    logger.info(f"\nSaved baseline_comparison.csv to {out_path}")
+    logger.info(f"Saved bootstrap CI to {ci_path}")
+
+    # 10) Generate Figure 2: scatter MAE vs QWK
+    try:
+        import matplotlib.pyplot as plt
+
+        plot_df = results_df[["model", "mae", "qwk"]].copy()
+
+        label_map = {
+            "Best_Model": "ESDP (Actual model)",
+            "Baseline_Always_Late": "Always Late",
+            "Baseline_QV_Threshold_30": "QV Threshold",
+            "Baseline_R1_Only_RF": "R1-only RF",
+        }
+        plot_df["label"] = plot_df["model"].map(label_map)
+        plot_df = plot_df[plot_df["label"].notnull()]
+
+        plt.figure(figsize=(6, 5))
+
+        # Manual label offsets to avoid overlap
+        offsets = {
+            "Always Late": (0.004, 0.005),
+            "QV Threshold": (0.004, -0.015),
+        }
+
+        for _, row in plot_df.iterrows():
+            x, y_val = row["mae"], row["qwk"]
+            label = row["label"]
+            plt.scatter(x, y_val, s=80)
+
+            dx, dy = offsets.get(label, (0.003, 0.003))
+            plt.text(
+                x + dx,
+                y_val + dy,
+                label,
+                fontsize=9,
+            )
+
+        plt.xlabel("Mean Absolute Error (MAE)")
+        plt.ylabel("Quadratic Weighted Kappa (QWK)")
+        plt.title("Comparative performance of ESDP and baseline decision strategies")
+        plt.grid(True, alpha=0.3)
+
+        # Adjust axis limits (tune if needed)
+        plt.xlim(0.45, 0.76)
+        plt.ylim(-0.02, 0.58)
+
+        fig_path = out_dir / "figure2_baseline_scatter.png"
+        plt.tight_layout()
+        plt.savefig(fig_path, dpi=300)
+        plt.close()
+
+        logger.info(f"Saved Figure 2 (scatter MAE vs QWK) to {fig_path}")
+    except Exception as e:
+        logger.warning(f"Could not generate Figure 2 (scatter): {e}")
 
 
 if __name__ == "__main__":

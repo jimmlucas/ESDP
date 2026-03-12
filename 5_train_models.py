@@ -24,7 +24,6 @@ import pandas as pd
 import seaborn as sns
 import yaml
 
-from sklearn.base import clone
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestClassifier, VotingClassifier
@@ -88,13 +87,11 @@ except ImportError:
 
 RANDOM_STATE = config["models"]["random_state"]
 
-
 def load_data():
     """Load labeled dataset."""
     df = pd.read_csv(config["data"]["labeled_csv"])
     logger.info(f"Loaded {len(df)} rows")
     return df
-
 
 def prepare_features(df):
     """
@@ -162,7 +159,6 @@ def prepare_features(df):
 
     return X, y, groups, features
 
-
 def grouped_sample_split(X, y, groups, test_size=0.2, random_state=42):
     """
     Split by Sample (group), not by row, to prevent leakage between
@@ -195,7 +191,6 @@ def grouped_sample_split(X, y, groups, test_size=0.2, random_state=42):
     logger.info(f"Test class distribution:\n{pd.Series(y_test).value_counts().sort_index()}")
 
     return X_train, X_test, y_train, y_test, train_groups, test_groups
-
 
 def calculate_metrics(y_true, y_pred, model_name="Model"):
     """Calculate classification and ordinal-aware metrics."""
@@ -246,32 +241,36 @@ def calculate_metrics(y_true, y_pred, model_name="Model"):
 
     return metrics
 
-
 def plot_confusion_matrix(y_true, y_pred, model_name, save_path):
-    """Plot and save confusion matrix."""
+    """Plot and save confusion matrix (B/W-friendly, readable numbers)."""
     cm = confusion_matrix(y_true, y_pred)
 
-    plt.figure(figsize=(8, 6))
-    sns.heatmap(
+    plt.figure(figsize=(4.5, 4))
+    ax = sns.heatmap(
         cm,
         annot=True,
         fmt="d",
-        cmap="Blues",
-        xticklabels=["Early", "Medium", "Late"],
-        yticklabels=["Early", "Medium", "Late"]
+        cmap="Greys",
+        cbar=False,
+        linewidths=0.5,
+        linecolor="black",
+        annot_kws={"size": 9}
     )
-    plt.title(f"Confusion Matrix - {model_name}")
-    plt.ylabel("True Label")
-    plt.xlabel("Predicted Label")
+    ax.set_xticklabels(["Early", "Medium", "Late"], rotation=0)
+    ax.set_yticklabels(["Early", "Medium", "Late"], rotation=0)
+
+    plt.title(f"Confusion Matrix - {model_name}", fontsize=11)
+    plt.ylabel("True label", fontsize=10)
+    plt.xlabel("Predicted label", fontsize=10)
+
     plt.tight_layout()
     plt.savefig(save_path, dpi=300, bbox_inches="tight")
     plt.close()
 
     logger.info(f"Saved confusion matrix to {save_path}")
 
-
 def plot_feature_importance_from_estimator(estimator, feature_names, model_name, save_path):
-    """Plot feature importance from the final estimator if available."""
+    """Plot top-20 feature importances (B/W-friendly horizontal bars)."""
     if hasattr(estimator, "feature_importances_"):
         importances = estimator.feature_importances_
     elif hasattr(estimator, "coef_"):
@@ -281,33 +280,46 @@ def plot_feature_importance_from_estimator(estimator, feature_names, model_name,
         logger.warning(f"Cannot extract feature importance for {model_name}")
         return
 
-    indices = np.argsort(importances)[-20:]
+    if importances is None or len(importances) == 0:
+        logger.warning(f"No importances available for {model_name}")
+        return
 
-    plt.figure(figsize=(10, 8))
-    plt.barh(range(len(indices)), importances[indices])
-    plt.yticks(range(len(indices)), [feature_names[i] for i in indices])
-    plt.xlabel("Importance")
-    plt.title(f"Top 20 Feature Importances - {model_name}")
+    indices = np.argsort(importances)[-20:]
+    top_importances = importances[indices]
+    top_features = [feature_names[i] for i in indices]
+
+    plt.figure(figsize=(5.5, 6))
+    y_pos = np.arange(len(top_features))
+
+    plt.barh(
+        y_pos,
+        top_importances,
+        color="0.7",      # mid gray
+        edgecolor="0.0",  # black border
+        linewidth=0.8
+    )
+    plt.yticks(y_pos, top_features, fontsize=8)
+    plt.xlabel("Importance", fontsize=10)
+    plt.title(f"Top 20 feature importances – {model_name}", fontsize=11)
+    plt.gca().invert_yaxis()
+
     plt.tight_layout()
     plt.savefig(save_path, dpi=300, bbox_inches="tight")
     plt.close()
 
     logger.info(f"Saved feature importance to {save_path}")
 
-
 def get_smote():
     """Return configured SMOTE object or None."""
     if not HAS_SMOTE or not config["imbalance"]["use_smote"]:
         return None
 
-    # Conservative default; real min_class check is hard before fit in pipeline
     k_neighbors = config["imbalance"]["smote_k_neighbors"]
     return SMOTE(
         sampling_strategy=config["imbalance"]["smote_sampling_strategy"],
         k_neighbors=k_neighbors,
         random_state=RANDOM_STATE
     )
-
 
 def build_xgb_pipeline():
     """Build XGBoost pipeline."""
@@ -335,7 +347,6 @@ def build_xgb_pipeline():
     pipeline_cls = ImbPipeline if smote is not None else SkPipeline
     return pipeline_cls(steps)
 
-
 def build_rf_pipeline():
     """Build Random Forest pipeline."""
     class_weights_config = config["imbalance"]["class_weights"]
@@ -362,7 +373,6 @@ def build_rf_pipeline():
     pipeline_cls = ImbPipeline if smote is not None else SkPipeline
     return pipeline_cls(steps)
 
-
 def build_ordinal_pipeline():
     """Build ordinal regression pipeline."""
     if not HAS_MORD:
@@ -384,7 +394,6 @@ def build_ordinal_pipeline():
     pipeline_cls = ImbPipeline if smote is not None else SkPipeline
     return pipeline_cls(steps)
 
-
 def fit_and_evaluate_pipeline(pipeline, X_train, y_train, X_test, y_test, model_name):
     """Fit a pipeline and evaluate it."""
     logger.info(f"Training {model_name}...")
@@ -394,7 +403,6 @@ def fit_and_evaluate_pipeline(pipeline, X_train, y_train, X_test, y_test, model_
     metrics = calculate_metrics(y_test, y_pred, model_name)
 
     return pipeline, metrics, y_pred
-
 
 def build_ensemble_pipeline():
     """
@@ -447,7 +455,6 @@ def build_ensemble_pipeline():
     pipeline_cls = ImbPipeline if smote is not None else SkPipeline
     return pipeline_cls(steps)
 
-
 def extract_legacy_artifacts_from_pipeline(pipeline):
     """Extract fitted imputer, scaler, and final estimator from a trained pipeline."""
     named_steps = pipeline.named_steps
@@ -457,7 +464,6 @@ def extract_legacy_artifacts_from_pipeline(pipeline):
     model = named_steps.get("model", None)
 
     return imputer, scaler, model
-
 
 def main():
     """Main training pipeline."""
@@ -652,7 +658,6 @@ def main():
     logger.info("=" * 60)
     logger.info("Training Complete!")
     logger.info("=" * 60)
-
 
 if __name__ == "__main__":
     main()
