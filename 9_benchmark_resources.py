@@ -5,7 +5,6 @@
 
 Measures computational savings from ESDP early stopping decisions.
 
-FINAL CORRECTIONS:
 - Uses the SAME sample-level split saved by 5_train_models.py
 - Benchmarks at trajectory level: Sample + Coverage (not Sample only)
 - Prevents mixing rounds from different coverages of the same sample
@@ -29,6 +28,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from scipy import stats
+from matplotlib.lines import Line2D
 
 # ============================================================
 # LOGGING
@@ -56,7 +56,6 @@ DATA_PATH = Path("data/training_dataset_with_target.csv")
 MODELS_DIR = Path("models")
 OUTPUTS_DIR = Path("outputs")
 PLOTS_DIR = OUTPUTS_DIR / "plots"
-
 
 # ============================================================
 # HELPER FUNCTIONS
@@ -162,7 +161,6 @@ def load_feature_names():
         raise FileNotFoundError(f"Missing feature names file: {feature_path}")
     return [line.strip() for line in feature_path.read_text().splitlines() if line.strip()]
 
-
 # ============================================================
 # MAIN BENCHMARK FUNCTION
 # ============================================================
@@ -178,9 +176,7 @@ def run_benchmark():
     PLOTS_DIR.mkdir(parents=True, exist_ok=True)
     OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
 
-    # ============================================================
     # 1. Load data and trained pipeline
-    # ============================================================
     logger.info("\nLoading data and model...")
     if not DATA_PATH.exists():
         raise FileNotFoundError(f"Missing input data: {DATA_PATH}")
@@ -204,9 +200,7 @@ def run_benchmark():
     logger.info(f"Loaded {len(df)} rows")
     logger.info(f"Unique samples: {df['Sample'].nunique()}")
 
-    # ============================================================
     # 2. Load saved split from training
-    # ============================================================
     split_file = get_split_file()
     with open(split_file, "r") as f:
         split_info = json.load(f)
@@ -217,9 +211,7 @@ def run_benchmark():
     logger.info(f"\nUsing TEST SET for benchmark: {len(test_samples)} samples")
     logger.info(f"Test rows: {len(df_test)}")
 
-    # ============================================================
     # 3. Benchmark each trajectory: Sample + Coverage
-    # ============================================================
     results = []
 
     grouped = df_test.groupby(["Sample", cov_col], dropna=False)
@@ -241,7 +233,6 @@ def run_benchmark():
         r3 = traj[traj["round"] == 3].iloc[0]
         r5 = traj[traj["round"] == 5].iloc[0]
 
-        # Prepare R1 features for prediction using the trained pipeline directly
         X_r1 = pd.DataFrame([r1[feature_names]], columns=feature_names)
         X_r1 = X_r1.replace([np.inf, -np.inf], np.nan)
 
@@ -266,7 +257,6 @@ def run_benchmark():
         metrics_rec = traj[traj["round"] == rec_rounds].iloc[0]
         metrics_random = traj[traj["round"] == random_rounds].iloc[0]
 
-        # Resource cost
         cpu_r5 = 5 * CPU_HOURS_PER_ROUND
         cpu_r1 = 1 * CPU_HOURS_PER_ROUND
         cpu_esdp = rec_rounds * CPU_HOURS_PER_ROUND
@@ -275,7 +265,6 @@ def run_benchmark():
         mem_r5 = 5 * MEMORY_GB_PER_ROUND
         mem_esdp = rec_rounds * MEMORY_GB_PER_ROUND
 
-        # Quality metrics
         qv_r5 = float(r5["qv"])
         qv_r1 = float(r1["qv"])
         qv_esdp = float(metrics_rec["qv"])
@@ -286,12 +275,10 @@ def run_benchmark():
         busco_esdp = float(metrics_rec["busco_complete"])
         busco_random = float(metrics_random["busco_complete"])
 
-        # Savings vs R5
         cpu_saved_esdp = cpu_r5 - cpu_esdp
         cpu_saved_r1 = cpu_r5 - cpu_r1
         cpu_saved_random = cpu_r5 - cpu_random
 
-        # Quality loss vs R5
         qv_loss_esdp = qv_r5 - qv_esdp
         qv_loss_r1 = qv_r5 - qv_r1
         qv_loss_random = qv_r5 - qv_random
@@ -300,7 +287,6 @@ def run_benchmark():
         busco_loss_r1 = busco_r5 - busco_r1
         busco_loss_random = busco_r5 - busco_random
 
-        # Efficiency
         eff_r5 = qv_r5 / cpu_r5
         eff_r1 = qv_r1 / cpu_r1
         eff_esdp = qv_esdp / cpu_esdp
@@ -381,9 +367,7 @@ def run_benchmark():
     if res_df.empty:
         raise RuntimeError("Benchmark produced no valid trajectories. Check rounds and test split.")
 
-    # ============================================================
     # 4. Summary with confidence intervals
-    # ============================================================
     logger.info("\n" + "=" * 60)
     logger.info("BENCHMARK RESULTS (with 95% CI)")
     logger.info("=" * 60)
@@ -397,7 +381,7 @@ def run_benchmark():
     cpu_reduction_esdp_mean = res_df["CPU_Reduction_ESDP_Pct"].mean()
     cpu_reduction_esdp_ci = bootstrap_ci(res_df["CPU_Reduction_ESDP_Pct"].values)
 
-    logger.info("\n💰 RESOURCE SAVINGS (ESDP):")
+    logger.info("\nRESOURCE SAVINGS (ESDP):")
     logger.info(f"  Total trajectories: {total_traj}")
     logger.info(f"  Unique test samples: {total_samples}")
     logger.info(f"  Total CPU saved: {res_df['CPU_Saved_ESDP'].sum():.1f}h")
@@ -416,7 +400,7 @@ def run_benchmark():
     busco_loss_mean = res_df["BUSCO_Loss_ESDP"].mean()
     busco_loss_ci = bootstrap_ci(res_df["BUSCO_Loss_ESDP"].values)
 
-    logger.info("\n🎯 QUALITY IMPACT (ESDP):")
+    logger.info("\nQUALITY IMPACT (ESDP):")
     logger.info(f"  Avg QV loss: {format_ci(qv_loss_mean, *qv_loss_ci, decimals=4)} points")
     logger.info(f"  Avg BUSCO loss: {format_ci(busco_loss_mean, *busco_loss_ci)}%")
     logger.info(
@@ -431,14 +415,12 @@ def run_benchmark():
     eff_gain_mean = res_df["Efficiency_Gain_ESDP_Pct"].mean()
     eff_gain_ci = bootstrap_ci(res_df["Efficiency_Gain_ESDP_Pct"].values)
 
-    logger.info("\n⚡ EFFICIENCY GAINS (ESDP):")
+    logger.info("\nEFFICIENCY GAINS (ESDP):")
     logger.info(f"  Avg efficiency gain: {format_ci(eff_gain_mean, *eff_gain_ci)}%")
     logger.info(f"  Best efficiency gain: {res_df['Efficiency_Gain_ESDP_Pct'].max():.1f}%")
 
-    # ============================================================
     # 5. Statistical significance tests
-    # ============================================================
-    logger.info("\n📊 STATISTICAL SIGNIFICANCE:")
+    logger.info("\nSTATISTICAL SIGNIFICANCE:")
 
     stat_qv_r1, p_qv_r1 = safe_wilcoxon(res_df["QV_ESDP"], res_df["QV_R1"])
     stat_cpu_r1, p_cpu_r1 = safe_wilcoxon(res_df["CPU_ESDP_Hours"], res_df["CPU_R1_Hours"])
@@ -454,10 +436,8 @@ def run_benchmark():
     logger.info(f"    QV difference: p={p_qv_rand:.4f} {significance_stars(p_qv_rand)}")
     logger.info(f"    CPU difference: p={p_cpu_rand:.4f} {significance_stars(p_cpu_rand)}")
 
-    # ============================================================
     # 6. Baseline comparison table
-    # ============================================================
-    logger.info("\n📋 BASELINE COMPARISON:")
+    logger.info("\nBASELINE COMPARISON:")
 
     comparison = pd.DataFrame({
         "Strategy": ["Always R5 (Baseline)", "ESDP", "Always R1", "Random"],
@@ -489,27 +469,26 @@ def run_benchmark():
 
     logger.info(f"\n{comparison.to_string(index=False)}")
 
-    # ============================================================
     # 7. Decision breakdown
-    # ============================================================
-    logger.info("\n🔍 DECISION BREAKDOWN:")
+    logger.info("\nDECISION BREAKDOWN:")
     decision_counts = res_df["Recommended_Rounds"].value_counts().sort_index()
     for rounds, count in decision_counts.items():
         pct = (count / total_traj) * 100
         logger.info(f"  {rounds} rounds: {count} trajectories ({pct:.1f}%)")
 
-    # ============================================================
     # 8. Visualizations
-    # ============================================================
+
     logger.info("\nGenerating visualizations...")
 
-    # Plot 1: Resource saving vs quality loss
+    # Plot 1: Resource saving vs quality loss (discrete colors 1/3/5)
+    round_to_color = {1: "green", 3: "gold", 5: "red"}
+    colors = res_df["Recommended_Rounds"].map(round_to_color).values
+
     fig, ax = plt.subplots(figsize=(10, 6))
     scatter = ax.scatter(
         res_df["CPU_Reduction_ESDP_Pct"],
         res_df["QV_Loss_ESDP"],
-        c=res_df["Recommended_Rounds"],
-        cmap="RdYlGn_r",
+        c=colors,
         s=90,
         alpha=0.7,
         edgecolors="black"
@@ -527,13 +506,22 @@ def run_benchmark():
         alpha=0.4,
         label="Zero QV loss"
     )
-    ax.set_xlabel("CPU Resource Reduction (%)")
-    ax.set_ylabel("Quality Loss (QV points)")
+    ax.set_xlabel("CPU resource reduction (%) relative to fixed five-round baseline")
+    ax.set_ylabel("Quality loss (QV points)")
     ax.set_title("Resource-efficiency benchmark of ESDP")
     ax.grid(True, alpha=0.3)
-    ax.legend()
-    cbar = plt.colorbar(scatter, ax=ax)
-    cbar.set_label("Recommended polishing rounds", rotation=270, labelpad=20)
+
+    legend_elements = [
+        Line2D([0], [0], marker='o', color='w', label='1 round',
+               markerfacecolor='green', markeredgecolor='black', markersize=8),
+        Line2D([0], [0], marker='o', color='w', label='3 rounds',
+               markerfacecolor='gold', markeredgecolor='black', markersize=8),
+        Line2D([0], [0], marker='o', color='w', label='5 rounds',
+               markerfacecolor='red', markeredgecolor='black', markersize=8),
+    ]
+    handles, labels = ax.get_legend_handles_labels()
+    ax.legend(handles=legend_elements + handles, loc="best")
+
     plt.tight_layout()
     plt.savefig(PLOTS_DIR / "resource_vs_quality.png", dpi=300)
     plt.close()
@@ -547,8 +535,8 @@ def run_benchmark():
     qv_means = comparison["Avg_QV"].tolist()
 
     bars1 = ax1.bar(strategies, cpu_means, alpha=0.8)
-    ax1.set_ylabel("Average CPU Hours")
-    ax1.set_title("Computational Cost Comparison")
+    ax1.set_ylabel("Average CPU hours")
+    ax1.set_title("Computational cost comparison")
     ax1.grid(True, alpha=0.3, axis="y")
     for bar in bars1:
         h = bar.get_height()
@@ -563,7 +551,7 @@ def run_benchmark():
 
     bars2 = ax2.bar(strategies, qv_means, alpha=0.8)
     ax2.set_ylabel("Average QV")
-    ax2.set_title("Assembly Quality Comparison")
+    ax2.set_title("Assembly quality comparison")
     ax2.grid(True, alpha=0.3, axis="y")
     for bar in bars2:
         h = bar.get_height()
@@ -588,9 +576,9 @@ def run_benchmark():
     ax.bar(x - width, res_df["Efficiency_R5"], width, label="R5 (Baseline)", alpha=0.7)
     ax.bar(x, res_df["Efficiency_ESDP"], width, label="ESDP", alpha=0.7)
     ax.bar(x + width, res_df["Efficiency_R1"], width, label="R1 (Always)", alpha=0.7)
-    ax.set_xlabel("Trajectory Index")
+    ax.set_xlabel("Trajectory index")
     ax.set_ylabel("Efficiency (QV per CPU-hour)")
-    ax.set_title("Computational Efficiency: Baseline vs ESDP vs Always R1")
+    ax.set_title("Computational efficiency: baseline vs ESDP vs Always R1")
     ax.legend()
     ax.grid(True, alpha=0.3, axis="y")
     plt.tight_layout()
@@ -603,9 +591,9 @@ def run_benchmark():
     decision_by_genus = res_df.groupby(["Genus", "Recommended_Rounds"]).size().unstack(fill_value=0)
     decision_by_genus.plot(kind="bar", stacked=True, ax=ax)
     ax.set_xlabel("Genus")
-    ax.set_ylabel("Number of Trajectories")
-    ax.set_title("ESDP Decisions by Genus")
-    ax.legend(title="Recommended Rounds")
+    ax.set_ylabel("Number of trajectories")
+    ax.set_title("ESDP decisions by genus")
+    ax.legend(title="Recommended rounds")
     plt.xticks(rotation=45, ha="right")
     plt.tight_layout()
     plt.savefig(PLOTS_DIR / "decisions_by_genus.png", dpi=300)
@@ -619,9 +607,9 @@ def run_benchmark():
     cumulative_savings = res_df_sorted["CPU_Saved_ESDP"].cumsum()
     ax1.plot(range(len(cumulative_savings)), cumulative_savings, linewidth=2)
     ax1.fill_between(range(len(cumulative_savings)), cumulative_savings, alpha=0.3)
-    ax1.set_xlabel("Number of Trajectories (sorted by savings)")
-    ax1.set_ylabel("Cumulative CPU-Hours Saved")
-    ax1.set_title("Cumulative Resource Savings")
+    ax1.set_xlabel("Number of trajectories (sorted by savings)")
+    ax1.set_ylabel("Cumulative CPU-hours saved")
+    ax1.set_title("Cumulative resource savings")
     ax1.grid(True, alpha=0.3)
 
     ax2.hist(res_df["QV_Loss_ESDP"], bins=20, edgecolor="black", alpha=0.7)
@@ -632,9 +620,9 @@ def run_benchmark():
         label=f"Acceptable threshold ({ACCEPTABLE_QV_LOSS})"
     )
     ax2.axvline(0, color="green", linestyle="-", alpha=0.5, label="No loss")
-    ax2.set_xlabel("QV Loss (points)")
-    ax2.set_ylabel("Number of Trajectories")
-    ax2.set_title("Distribution of Quality Loss")
+    ax2.set_xlabel("QV loss (points)")
+    ax2.set_ylabel("Number of trajectories")
+    ax2.set_title("Distribution of quality loss")
     ax2.legend()
     ax2.grid(True, alpha=0.3, axis="y")
 
@@ -643,12 +631,10 @@ def run_benchmark():
     plt.close()
     logger.info(f"  Saved: {PLOTS_DIR / 'cost_benefit_analysis.png'}")
 
-    # ============================================================
     # 9. Save outputs
-    # ============================================================
     output_path = OUTPUTS_DIR / "resource_benchmark_results.csv"
     res_df.to_csv(output_path, index=False)
-    logger.info(f"\n💾 Results saved to: {output_path}")
+    logger.info(f"\nResults saved to: {output_path}")
 
     comparison_path = OUTPUTS_DIR / "baseline_comparison_table.csv"
     comparison.to_csv(comparison_path, index=False)
@@ -686,9 +672,7 @@ def run_benchmark():
     summary_df.to_csv(summary_path, index=False)
     logger.info(f"Summary saved to: {summary_path}")
 
-    # ============================================================
     # 10. Publication-ready summary table
-    # ============================================================
     logger.info("\n" + "=" * 60)
     logger.info("PUBLICATION-READY SUMMARY TABLE")
     logger.info("=" * 60)
@@ -730,9 +714,5 @@ def run_benchmark():
 
     return res_df, summary, comparison, pub_table
 
-
-# ============================================================
-# CLI
-# ============================================================
 if __name__ == "__main__":
     results_df, summary, comparison, pub_table = run_benchmark()
