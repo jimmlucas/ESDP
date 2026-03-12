@@ -2,15 +2,6 @@
 # -*- coding: utf-8 -*-
 """
 5_train_models.py - Multi-Model Training with TRUE Pipeline Training
-
-CORRECTIONS:
-- Prevents data leakage by splitting at Sample level (not Sample+Coverage)
-- Uses grouped sample split without invalid per-group stratification
-- Trains models inside real pipelines from the start
-- Handles NaN correctly with SimpleImputer
-- Applies SMOTE only during training via imblearn Pipeline
-- Eliminates feature-name warning mismatch between training and inference
-- Saves bundled trained pipeline + legacy artifacts (model, scaler, imputer)
 """
 
 import json

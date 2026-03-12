@@ -3,12 +3,6 @@
 """
 2_exploratory_analysis.py - Comprehensive Exploratory Data Analysis
 
-NEW SCRIPT - Provides detailed insights into the data before modeling:
-- Distribution of metrics across rounds
-- Class imbalance visualization
-- Feature correlations
-- Quality metrics by genus and coverage
-- Identification of outliers
 """
 
 import pandas as pd

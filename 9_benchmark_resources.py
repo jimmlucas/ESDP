@@ -3,15 +3,6 @@
 """
 9_benchmark_resources.py - Real-world resource saving analysis (FINAL)
 
-Measures computational savings from ESDP early stopping decisions.
-
-- Uses the SAME sample-level split saved by 5_train_models.py
-- Benchmarks at trajectory level: Sample + Coverage (not Sample only)
-- Prevents mixing rounds from different coverages of the same sample
-- Uses best_model_pipeline.pkl directly
-- Avoids legacy artifact mismatch warnings
-- Produces bootstrap CIs, Wilcoxon tests, baseline comparisons, and plots
-
 Metrics:
 - CPU-hours saved per trajectory
 - Quality loss (QV, BUSCO) from early stopping

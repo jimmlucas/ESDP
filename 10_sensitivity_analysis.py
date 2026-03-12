@@ -5,7 +5,6 @@
 
 Sensitivity analysis for confidence threshold in ESDP.
 
-CORRECTED:
 - Reuses the SAME sample-level split saved by 5_train_models.py
 - Evaluates decision units at trajectory level: Sample + Coverage
 - Predicts from round-1 features only (as intended by ESDP design)

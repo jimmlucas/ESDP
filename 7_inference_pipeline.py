@@ -2,14 +2,6 @@
 # -*- coding: utf-8 -*-
 """
 7_inference_pipeline.py - Production Inference Pipeline
-
-Production-ready script for predicting optimal stopping rounds for new samples.
-
-CORRECTIONS:
-- Keeps internal model classes as 0-based (0,1,2)
-- Returns human-readable/output classes as 1-based (1,2,3)
-- Makes summary consistent with class_mapping
-- Handles empty input CSV safely
 """
 
 import pandas as pd

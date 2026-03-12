@@ -3,12 +3,6 @@
 """
 3_feature_engineering.py - Advanced Feature Engineering
 
-CRITICAL IMPROVEMENTS:
-- Ratio features (qv_improvement_rate, busco_efficiency, cost_benefit_ratio)
-- Trend/momentum features (deltas between consecutive rounds)
-- Polynomial features for key metrics
-- Feature interactions
-- Domain-specific features
 """
 
 import pandas as pd

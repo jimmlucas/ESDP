@@ -3,15 +3,6 @@
 """
 1_csv_merge.py - Enhanced CSV Merger with Data Validation
 
-Improvements:
-- Input validation and error handling
-- Data quality checks
-- Logging system
-- Progress tracking
-- Summary statistics
-
-Generates 'all_samples_polishing_metrics.csv' combining polishing metrics
-from multiple sources with QC from Flye assembly.
 """
 
 from pathlib import Path

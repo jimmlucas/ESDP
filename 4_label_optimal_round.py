@@ -3,12 +3,6 @@
 """
 4_label_optimal_round.py - Label Optimal Rounds with 3-CLASS SYSTEM
 
-CRITICAL IMPROVEMENT: Reduced from 5 to 3 classes for better performance:
-- Class 1 (Early): Rounds 1-2 - Stop early (31 groups: 7+24)
-- Class 2 (Medium): Rounds 3-4 - Stop mid-way (41 groups: 28+13)
-- Class 3 (Late): Round 5 - Continue to end (89 groups)
-
-This creates more balanced classes and reduces confusion between adjacent rounds.
 """
 
 import pandas as pd
