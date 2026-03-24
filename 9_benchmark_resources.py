@@ -1,10 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-9_benchmark_resources.py - Real-world resource saving analysis (FINAL)
-
-Metrics:
-- CPU-hours saved per trajectory
+9_benchmark_resources.py - Real-world resource saving analysis
 - Quality loss (QV, BUSCO) from early stopping
 - Efficiency (QV per CPU-hour)
 - Baseline comparisons: Always R5, Always R1, Random
@@ -12,6 +9,7 @@ Metrics:
 
 import json
 import logging
+import hashlib
 from pathlib import Path
 
 import joblib
@@ -152,6 +150,17 @@ def load_feature_names():
         raise FileNotFoundError(f"Missing feature names file: {feature_path}")
     return [line.strip() for line in feature_path.read_text().splitlines() if line.strip()]
 
+
+def deterministic_random_round(sample, coverage, seed=RANDOM_STATE):
+    """
+    Deterministic pseudo-random stopping round per trajectory.
+    Stable across runs and independent of Python hash randomization.
+    """
+    key = f"{sample}|{coverage}|{seed}".encode("utf-8")
+    digest = hashlib.md5(key).hexdigest()
+    idx = int(digest[:8], 16) % 3
+    return [1, 3, 5][idx]
+
 # ============================================================
 # MAIN BENCHMARK FUNCTION
 # ============================================================
@@ -233,17 +242,13 @@ def run_benchmark():
             y_proba = pipeline.predict_proba(X_r1)[0]
             confidence = float(y_proba[y_pred])
         else:
-            y_proba = None
             confidence = np.nan
 
         class_to_rounds = {0: 1, 1: 3, 2: 5}
         rec_rounds = class_to_rounds[y_pred]
 
-        random_rounds = int(
-            np.random.RandomState(
-                abs(hash(f"{sample}|{coverage}|{RANDOM_STATE}")) % (2**32)
-            ).choice([1, 3, 5])
-        )
+        # Deterministic random baseline per trajectory
+        random_rounds = deterministic_random_round(sample, coverage, RANDOM_STATE)
 
         metrics_rec = traj[traj["round"] == rec_rounds].iloc[0]
         metrics_random = traj[traj["round"] == random_rounds].iloc[0]
@@ -468,7 +473,6 @@ def run_benchmark():
         logger.info(f"  {rounds} rounds: {count} trajectories ({pct:.1f}%)")
 
     # 8. Visualizations
-
     logger.info("\nGenerating visualizations...")
 
     # Plot 1: Resource saving vs quality loss (discrete colors 1/3/5)
@@ -476,7 +480,7 @@ def run_benchmark():
     colors = res_df["Recommended_Rounds"].map(round_to_color).values
 
     fig, ax = plt.subplots(figsize=(10, 6))
-    scatter = ax.scatter(
+    ax.scatter(
         res_df["CPU_Reduction_ESDP_Pct"],
         res_df["QV_Loss_ESDP"],
         c=colors,
@@ -503,12 +507,12 @@ def run_benchmark():
     ax.grid(True, alpha=0.3)
 
     legend_elements = [
-        Line2D([0], [0], marker='o', color='w', label='1 round',
-               markerfacecolor='green', markeredgecolor='black', markersize=8),
-        Line2D([0], [0], marker='o', color='w', label='3 rounds',
-               markerfacecolor='gold', markeredgecolor='black', markersize=8),
-        Line2D([0], [0], marker='o', color='w', label='5 rounds',
-               markerfacecolor='red', markeredgecolor='black', markersize=8),
+        Line2D([0], [0], marker="o", color="w", label="1 round",
+               markerfacecolor="green", markeredgecolor="black", markersize=8),
+        Line2D([0], [0], marker="o", color="w", label="3 rounds",
+               markerfacecolor="gold", markeredgecolor="black", markersize=8),
+        Line2D([0], [0], marker="o", color="w", label="5 rounds",
+               markerfacecolor="red", markeredgecolor="black", markersize=8),
     ]
     handles, labels = ax.get_legend_handles_labels()
     ax.legend(handles=legend_elements + handles, loc="best")
@@ -704,6 +708,7 @@ def run_benchmark():
     logger.info("=" * 60)
 
     return res_df, summary, comparison, pub_table
+
 
 if __name__ == "__main__":
     results_df, summary, comparison, pub_table = run_benchmark()
