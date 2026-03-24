@@ -300,6 +300,128 @@ def plot_feature_importance_from_estimator(estimator, feature_names, model_name,
 
     logger.info(f"Saved feature importance to {save_path}")
 
+def save_figure_png_tiff(fig, output_dir: Path, base_name: str, png_dpi: int = 300, tiff_dpi: int = 600):
+    """Save a figure in both PNG and TIFF formats."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    png_path = output_dir / f"{base_name}.png"
+    fig.savefig(
+        png_path,
+        dpi=png_dpi,
+        bbox_inches="tight"
+    )
+    logger.info(f"Saved PNG figure to {png_path}")
+
+    tiff_path = output_dir / f"{base_name}.tiff"
+    fig.savefig(
+        tiff_path,
+        dpi=tiff_dpi,
+        bbox_inches="tight",
+        pil_kwargs={"compression": "raw"}  # TIFF without LZW compression
+    )
+    logger.info(f"Saved TIFF figure to {tiff_path}")
+
+
+def plot_rf_cm_and_importances_combined(y_true, y_pred, estimator, feature_names, output_dir: Path):
+    """
+    Create combined Random Forest figure with:
+    A) confusion matrix
+    B) top 20 feature importances
+
+    Saves:
+    - rf_cm_and_importances_combined.png
+    - rf_cm_and_importances_combined.tiff
+    """
+    # ---------------------------------------------------------------------
+    # Confusion matrix
+    # ---------------------------------------------------------------------
+    cm = confusion_matrix(y_true, y_pred)
+
+    # ---------------------------------------------------------------------
+    # Feature importances
+    # ---------------------------------------------------------------------
+    if hasattr(estimator, "feature_importances_"):
+        importances = estimator.feature_importances_
+    elif hasattr(estimator, "coef_"):
+        coef = estimator.coef_
+        importances = np.abs(coef).mean(axis=0) if getattr(coef, "ndim", 1) > 1 else np.abs(coef)
+    else:
+        logger.warning("Cannot extract feature importances for combined RF figure.")
+        return
+
+    if importances is None or len(importances) == 0:
+        logger.warning("No feature importances available for combined RF figure.")
+        return
+
+    top_n = 20
+    indices = np.argsort(importances)[-top_n:]
+    top_importances = importances[indices]
+    top_features = [feature_names[i] for i in indices]
+
+    # Sort ascending so the largest bar appears at the bottom, matching your current figure style
+    order = np.argsort(top_importances)
+    top_importances = top_importances[order]
+    top_features = [top_features[i] for i in order]
+
+    # ---------------------------------------------------------------------
+    # Combined figure
+    # ---------------------------------------------------------------------
+    fig, axes = plt.subplots(
+        1, 2,
+        figsize=(14, 6),
+        gridspec_kw={"width_ratios": [1.15, 0.85]}
+    )
+
+    # Panel A: Confusion matrix
+    ax = axes[0]
+    sns.heatmap(
+        cm,
+        annot=True,
+        fmt="d",
+        cmap="Greys",
+        cbar=False,
+        linewidths=0.5,
+        linecolor="black",
+        annot_kws={"size": 10},
+        ax=ax
+    )
+    ax.set_xticklabels(["Early", "Medium", "Late"], rotation=0)
+    ax.set_yticklabels(["Early", "Medium", "Late"], rotation=0)
+    ax.set_xlabel("Predicted label", fontsize=11)
+    ax.set_ylabel("True label", fontsize=11)
+    ax.set_title("Confusion Matrix - Random Forest", fontsize=16, pad=10)
+    ax.text(-0.27, 1.08, "A", transform=ax.transAxes,
+            fontsize=24, fontweight="bold", va="top")
+
+    # Panel B: Feature importances
+    ax = axes[1]
+    y_pos = np.arange(len(top_features))
+    ax.barh(
+        y_pos,
+        top_importances,
+        color="0.7",
+        edgecolor="0.2",
+        linewidth=0.8
+    )
+    ax.set_yticks(y_pos)
+    ax.set_yticklabels(top_features, fontsize=9)
+    ax.set_xlabel("Importance", fontsize=11)
+    ax.set_title("Top 20 feature importances - Random Forest", fontsize=13, pad=10)
+    ax.text(-0.42, 1.08, "B", transform=ax.transAxes,
+            fontsize=24, fontweight="bold", va="top")
+
+    fig.tight_layout()
+
+    save_figure_png_tiff(
+        fig=fig,
+        output_dir=output_dir,
+        base_name="rf_cm_and_importances_combined",
+        png_dpi=300,
+        tiff_dpi=600
+    )
+
+    plt.close(fig)
+
 def get_smote():
     """Return configured SMOTE object or None."""
     if not HAS_SMOTE or not config["imbalance"]["use_smote"]:
@@ -512,16 +634,28 @@ def main():
             )
             all_models["random_forest"] = rf_model
             all_metrics.append(rf_metrics)
+
             plot_confusion_matrix(
                 y_test, rf_pred, "Random Forest",
                 Path(config["outputs"]["plots_dir"]) / "cm_random_forest.png"
             )
+
             plot_feature_importance_from_estimator(
                 rf_model.named_steps["model"],
                 feature_names,
                 "Random Forest",
                 Path(config["outputs"]["plots_dir"]) / "fi_random_forest.png"
             )
+
+            # Combined manuscript-style figure
+            plot_rf_cm_and_importances_combined(
+                y_true=y_test,
+                y_pred=rf_pred,
+                estimator=rf_model.named_steps["model"],
+                feature_names=feature_names,
+                output_dir=Path(config["outputs"]["plots_dir"])
+            )
+
         except Exception as e:
             logger.error(f"Random Forest training failed: {e}")
 

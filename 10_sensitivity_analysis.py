@@ -432,10 +432,18 @@ def plot_sensitivity_analysis(results_df: pd.DataFrame):
     ax.grid(True, alpha=0.3)
     ax.text(-0.12, 1.05, "F", transform=ax.transAxes,
             fontsize=18, fontweight="bold", va="top")
-
+    # PNG 
     plt.tight_layout()
     output_path = PLOTS_DIR / "sensitivity_analysis.png"
     plt.savefig(output_path, dpi=300, bbox_inches="tight")
+    # TIFF
+    tiff_path = PLOTS_DIR / "sensitivity_analysis.tiff"
+    plt.savefig(
+        tiff_path,
+        dpi=600,
+        bbox_inches="tight",
+        pil_kwargs={"compression": "raw"}
+    )
     logger.info(f"Saved plot to {output_path}")
     plt.close()
 

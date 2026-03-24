@@ -22,3 +22,8 @@ logs/
 # Temporary/local artifacts
 decision.json
 test.json
+
+outputs/plots/*.tiff
+outputs/plots/*.tif
+outputs/plots/*.tiff
+outputs/plots/*.tif
