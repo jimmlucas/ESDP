@@ -291,18 +291,17 @@ def evaluate_threshold(
         false_negative_cost=safety_metrics["false_negative_cost"],
     )
 
-
 def plot_sensitivity_analysis(results_df: pd.DataFrame):
-    """Create visualization of threshold sensitivity (panels A–F)."""
+    """Create threshold-sensitivity plots in manuscript order (A–F)."""
     PLOTS_DIR.mkdir(parents=True, exist_ok=True)
 
     fig, axes = plt.subplots(3, 2, figsize=(16, 12))
 
-    # A. Performance metrics
+    # -------------------------------------------------------------------------
+    # A. Computational cost savings
+    # -------------------------------------------------------------------------
     ax = axes[0, 0]
-    ax.plot(results_df["threshold"], results_df["accuracy"], "o-", label="Accuracy", linewidth=2)
-    ax.plot(results_df["threshold"], results_df["balanced_accuracy"], "s-", label="Balanced Acc", linewidth=2)
-    ax.plot(results_df["threshold"], results_df["macro_f1"], "^-", label="Macro F1", linewidth=2)
+    ax.plot(results_df["threshold"], results_df["cpu_reduction_pct"], "o-", color="blue", linewidth=2)
     ax.axvline(
         x=REFERENCE_THRESHOLD,
         color="red",
@@ -311,14 +310,16 @@ def plot_sensitivity_analysis(results_df: pd.DataFrame):
         label=f"Reference threshold ({REFERENCE_THRESHOLD})"
     )
     ax.set_xlabel("Confidence threshold")
-    ax.set_ylabel("Score")
-    ax.set_title("Performance metrics", fontsize=11)
+    ax.set_ylabel("CPU reduction (%)")
+    ax.set_title("Computational cost savings", fontsize=11)
     ax.legend()
     ax.grid(True, alpha=0.3)
     ax.text(-0.12, 1.05, "A", transform=ax.transAxes,
             fontsize=18, fontweight="bold", va="top")
 
-    # B. QWK and MAE
+    # -------------------------------------------------------------------------
+    # B. Agreement and error
+    # -------------------------------------------------------------------------
     ax = axes[0, 1]
     ax2 = ax.twinx()
     l1 = ax.plot(results_df["threshold"], results_df["qwk"], "o-", color="green", label="QWK", linewidth=2)
@@ -335,11 +336,13 @@ def plot_sensitivity_analysis(results_df: pd.DataFrame):
     ax.text(-0.12, 1.05, "B", transform=ax.transAxes,
             fontsize=18, fontweight="bold", va="top")
 
-    # C. Decision distribution
+    # -------------------------------------------------------------------------
+    # C. Performance metrics
+    # -------------------------------------------------------------------------
     ax = axes[1, 0]
-    ax.plot(results_df["threshold"], results_df["pct_early"], "o-", label="Early (R1)", linewidth=2)
-    ax.plot(results_df["threshold"], results_df["pct_medium"], "s-", label="Medium (R3)", linewidth=2)
-    ax.plot(results_df["threshold"], results_df["pct_late"], "^-", label="Late (R5)", linewidth=2)
+    ax.plot(results_df["threshold"], results_df["accuracy"], "o-", label="Accuracy", linewidth=2)
+    ax.plot(results_df["threshold"], results_df["balanced_accuracy"], "s-", label="Balanced Acc", linewidth=2)
+    ax.plot(results_df["threshold"], results_df["macro_f1"], "^-", label="Macro F1", linewidth=2)
     ax.axvline(
         x=REFERENCE_THRESHOLD,
         color="red",
@@ -348,51 +351,17 @@ def plot_sensitivity_analysis(results_df: pd.DataFrame):
         label=f"Reference threshold ({REFERENCE_THRESHOLD})"
     )
     ax.set_xlabel("Confidence threshold")
-    ax.set_ylabel("Percentage (%)")
-    ax.set_title("Decision distribution", fontsize=11)
+    ax.set_ylabel("Score")
+    ax.set_title("Performance metrics", fontsize=11)
     ax.legend()
     ax.grid(True, alpha=0.3)
     ax.text(-0.12, 1.05, "C", transform=ax.transAxes,
             fontsize=18, fontweight="bold", va="top")
 
-    # D. Conservative bias rate
+    # -------------------------------------------------------------------------
+    # D. Safety metrics
+    # -------------------------------------------------------------------------
     ax = axes[1, 1]
-    ax.plot(results_df["threshold"], results_df["bias_applied_rate"], "o-", color="purple", linewidth=2)
-    ax.axvline(
-        x=REFERENCE_THRESHOLD,
-        color="red",
-        linestyle="--",
-        alpha=0.5,
-        label=f"Reference threshold ({REFERENCE_THRESHOLD})"
-    )
-    ax.set_xlabel("Confidence threshold")
-    ax.set_ylabel("Bias applied rate (%)")
-    ax.set_title("Conservative-bias rate", fontsize=11)
-    ax.legend()
-    ax.grid(True, alpha=0.3)
-    ax.text(-0.12, 1.05, "D", transform=ax.transAxes,
-            fontsize=18, fontweight="bold", va="top")
-
-    # E. CPU reduction
-    ax = axes[2, 0]
-    ax.plot(results_df["threshold"], results_df["cpu_reduction_pct"], "o-", color="blue", linewidth=2)
-    ax.axvline(
-        x=REFERENCE_THRESHOLD,
-        color="red",
-        linestyle="--",
-        alpha=0.5,
-        label=f"Reference threshold ({REFERENCE_THRESHOLD})"
-    )
-    ax.set_xlabel("Confidence threshold")
-    ax.set_ylabel("CPU reduction (%)")
-    ax.set_title("Computational cost savings", fontsize=11)
-    ax.legend()
-    ax.grid(True, alpha=0.3)
-    ax.text(-0.12, 1.05, "E", transform=ax.transAxes,
-            fontsize=18, fontweight="bold", va="top")
-
-    # F. Safety metrics
-    ax = axes[2, 1]
     ax2 = ax.twinx()
     l1 = ax.plot(
         results_df["threshold"],
@@ -412,12 +381,54 @@ def plot_sensitivity_analysis(results_df: pd.DataFrame):
     )
     ax.axvline(x=REFERENCE_THRESHOLD, color="red", linestyle="--", alpha=0.5)
     ax.set_xlabel("Confidence threshold")
-    ax.set_ylabel("False early rate (%)", color="black")
-    ax2.set_ylabel("Decision error (MAE)", color="black")
+    ax.set_ylabel("False early rate (%)")
+    ax2.set_ylabel("Decision error (MAE)")
     ax.set_title("Safety metrics", fontsize=11)
     lns = l1 + l2
     labs = [l.get_label() for l in lns]
     ax.legend(lns, labs, loc="best")
+    ax.grid(True, alpha=0.3)
+    ax.text(-0.12, 1.05, "D", transform=ax.transAxes,
+            fontsize=18, fontweight="bold", va="top")
+
+    # -------------------------------------------------------------------------
+    # E. Conservative-bias rate
+    # -------------------------------------------------------------------------
+    ax = axes[2, 0]
+    ax.plot(results_df["threshold"], results_df["bias_applied_rate"], "o-", color="purple", linewidth=2)
+    ax.axvline(
+        x=REFERENCE_THRESHOLD,
+        color="red",
+        linestyle="--",
+        alpha=0.5,
+        label=f"Reference threshold ({REFERENCE_THRESHOLD})"
+    )
+    ax.set_xlabel("Confidence threshold")
+    ax.set_ylabel("Bias applied rate (%)")
+    ax.set_title("Conservative-bias rate", fontsize=11)
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    ax.text(-0.12, 1.05, "E", transform=ax.transAxes,
+            fontsize=18, fontweight="bold", va="top")
+
+    # -------------------------------------------------------------------------
+    # F. Decision distribution
+    # -------------------------------------------------------------------------
+    ax = axes[2, 1]
+    ax.plot(results_df["threshold"], results_df["pct_early"], "o-", label="Early (R1)", linewidth=2)
+    ax.plot(results_df["threshold"], results_df["pct_medium"], "s-", label="Medium (R3)", linewidth=2)
+    ax.plot(results_df["threshold"], results_df["pct_late"], "^-", label="Late (R5)", linewidth=2)
+    ax.axvline(
+        x=REFERENCE_THRESHOLD,
+        color="red",
+        linestyle="--",
+        alpha=0.5,
+        label=f"Reference threshold ({REFERENCE_THRESHOLD})"
+    )
+    ax.set_xlabel("Confidence threshold")
+    ax.set_ylabel("Percentage (%)")
+    ax.set_title("Decision distribution", fontsize=11)
+    ax.legend()
     ax.grid(True, alpha=0.3)
     ax.text(-0.12, 1.05, "F", transform=ax.transAxes,
             fontsize=18, fontweight="bold", va="top")
@@ -427,7 +438,6 @@ def plot_sensitivity_analysis(results_df: pd.DataFrame):
     plt.savefig(output_path, dpi=300, bbox_inches="tight")
     logger.info(f"Saved plot to {output_path}")
     plt.close()
-
 
 # -----------------------------------------------------------------------------
 # Main
