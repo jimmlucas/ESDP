@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 from sklearn.preprocessing import PolynomialFeatures
 
+
 @dataclass(frozen=True)
 class FeatureBuilderConfig:
     """Configuration that affects canonical feature definitions."""
@@ -80,7 +81,13 @@ class FeatureBuilder:
                 result["delta_qv"].fillna(0) * 0.5
                 + result["delta_busco_complete"].fillna(0) * 0.5
             )
-            result["cost_benefit_ratio"] = improvement / result["round"]
+            cov_col = FeatureBuilder._coverage_column(result)
+            has_round_one = result.groupby(
+                ["Sample", cov_col],
+            )["round"].transform(lambda rounds: rounds.eq(1).any())
+            result["cost_benefit_ratio"] = (
+                improvement / result["round"]
+            ).where(has_round_one)
 
         return result
 
@@ -95,6 +102,9 @@ class FeatureBuilder:
                 )[metric].cumsum()
 
         if {"delta_qv", "delta_busco_complete"}.issubset(result.columns):
+            has_round_one = result.groupby(
+                ["Sample", cov_col],
+            )["round"].transform(lambda rounds: rounds.eq(1).any())
             delta_error = result.get(
                 "delta_error_improvement",
                 pd.Series(0.0, index=result.index),
@@ -103,12 +113,13 @@ class FeatureBuilder:
                 "delta_assembly_error",
                 pd.Series(0.0, index=result.index),
             )
-            result["score_improvement"] = (
+            score_improvement = (
                 result["delta_qv"].fillna(0) * 0.4
                 + result["delta_busco_complete"].fillna(0) * 0.3
                 + delta_error.fillna(0) * 0.2
                 + delta_assembly.fillna(0) * 0.1
             )
+            result["score_improvement"] = score_improvement.where(has_round_one)
             result["gain_cumulative"] = result.groupby(
                 ["Sample", cov_col]
             )["score_improvement"].cumsum()
@@ -180,16 +191,23 @@ class FeatureBuilder:
             threshold = (
                 self.config.plateau_relative_threshold * running_max_gain
             )
-            result["is_plateau"] = (
+            is_plateau = (
                 threshold.gt(0)
                 & result["score_improvement"].abs().lt(threshold)
-            ).astype(int)
+            ).astype(float)
+            result["is_plateau"] = is_plateau.where(
+                result["score_improvement"].notna()
+            )
 
             streak = []
             run = 0
             for value in result["is_plateau"]:
-                run = run + 1 if value == 1 else 0
-                streak.append(run)
+                if pd.isna(value):
+                    run = 0
+                    streak.append(np.nan)
+                else:
+                    run = run + 1 if value == 1 else 0
+                    streak.append(float(run))
             result["plateau_streak"] = streak
             return result
 
@@ -244,14 +262,16 @@ class FeatureBuilder:
         )
         transformed = polynomial.fit_transform(result[available].fillna(0))
         names = polynomial.get_feature_names_out(available)
-        interaction_mask = ["*" in name for name in names]
+        interaction_mask = polynomial.powers_.sum(axis=1) > 1
+        interaction_names = [
+            name.replace(" ", "*")
+            for name, selected in zip(names, interaction_mask)
+            if selected
+        ]
+        interaction_values = transformed[:, interaction_mask]
 
-        for index, name in enumerate(
-            name for name, selected in zip(names, interaction_mask) if selected
-        ):
-            result[f"interaction_{name}"] = transformed[:, interaction_mask][
-                :, index
-            ]
+        for index, name in enumerate(interaction_names):
+            result[f"interaction_{name}"] = interaction_values[:, index]
 
         return result
 

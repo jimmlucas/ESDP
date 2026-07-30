@@ -84,6 +84,7 @@ def test_refactor_preserves_frozen_features_except_plateau_correction():
     ).transform(raw)
 
     excluded = {"is_plateau", "plateau_streak"}
+    assert list(current.columns) == list(frozen.columns)
     comparable_columns = [
         column
         for column in current.columns
@@ -176,3 +177,49 @@ def test_v1_model_alignment_is_shared_without_changing_its_contract():
     assert pd.isna(actual.loc[0, "busco_per_contig"])
     assert pd.isna(actual.loc[0, "n50_fraction"])
     assert pd.isna(actual.loc[0, "delta_qv"])
+
+
+def test_isolated_later_round_does_not_invent_temporal_features():
+    metrics = PolishingMetrics(
+        sample_id="sample_1",
+        round=3,
+        coverage=40.0,
+        qv=35.0,
+        busco_complete=96.0,
+        n50=2_100_000,
+        num_contigs=4,
+        error_rate=0.006,
+        total_length=4_910_000,
+    )
+
+    online = engineer_features_online(metrics)
+
+    temporal_features = [
+        "delta_qv",
+        "delta_busco_complete",
+        "cost_benefit_ratio",
+        "score_improvement",
+        "gain_cumulative",
+        "score_improvement_trend",
+        "is_plateau",
+        "plateau_streak",
+        "polishing_effectiveness",
+        "qv_from_r1",
+    ]
+    assert all(pd.isna(online[feature]) for feature in temporal_features)
+
+
+def test_polynomial_builder_adds_pairwise_interactions():
+    raw = pd.DataFrame(
+        {
+            "qv": [30.0],
+            "busco_complete": [90.0],
+            "error_rate": [0.01],
+        }
+    )
+
+    engineered = FeatureBuilder.add_polynomial_features(raw)
+
+    assert engineered.loc[0, "interaction_qv*busco_complete"] == 2_700.0
+    assert engineered.loc[0, "interaction_qv*error_rate"] == 0.3
+    assert engineered.loc[0, "interaction_busco_complete*error_rate"] == 0.9
