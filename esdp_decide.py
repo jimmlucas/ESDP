@@ -20,8 +20,16 @@ import warnings
 from dataclasses import dataclass, asdict, field
 from pathlib import Path
 from typing import List, Optional, Dict, Any
-import numpy as np
 import pandas as pd
+
+from esdp_features import (
+    FeatureBuilder,
+    FeatureBuilderConfig,
+    align_model_features,
+)
+
+
+FEATURE_BUILDER = FeatureBuilder(FeatureBuilderConfig())
 
 
 @dataclass
@@ -91,41 +99,42 @@ class Decision:
 
 
 def engineer_features_online(metrics: PolishingMetrics) -> Dict[str, float]:
+    """Compute canonical features for the history available to the v1 API.
+
+    The v1 contract supplies one round at a time, so history-dependent
+    features remain missing unless explicitly provided by the caller. The
+    trajectory contract introduced in v2 will pass complete round history to
+    the same :class:`FeatureBuilder`.
     """
-    Compute derived features from raw metrics (online feature engineering).
+    raw = asdict(metrics)
+    record = {
+        "Sample": metrics.sample_id,
+        "Coverage": (
+            metrics.coverage_effective
+            if metrics.coverage_effective is not None
+            else metrics.coverage
+            if metrics.coverage is not None
+            else "UNKNOWN"
+        ),
+        "round": metrics.round if metrics.round is not None else 1,
+        **{
+            key: value
+            for key, value in raw.items()
+            if key not in {"sample_id", "genus", "round"}
+        },
+    }
+    canonical = FEATURE_BUILDER.transform(pd.DataFrame([record])).iloc[0].to_dict()
 
-    This mirrors the feature engineering done during training but operates
-    on a single sample at inference time.
-    """
-    features = {}
+    # Preserve explicitly supplied historical values in the compatibility API.
+    for key, value in raw.items():
+        if key not in {"sample_id", "genus", "round"} and value is not None:
+            canonical[key] = value
 
-    # Basic ratios
-    if metrics.coverage and metrics.coverage_effective:
-        features['coverage_efficiency'] = metrics.coverage_effective / metrics.coverage
-
-    if metrics.n50 and metrics.total_length:
-        features['n50_ratio'] = metrics.n50 / metrics.total_length
-
-    if metrics.busco_complete and metrics.num_contigs:
-        features['busco_per_contig'] = metrics.busco_complete / metrics.num_contigs
-
-    # Assembly quality score
-    if metrics.qv and metrics.busco_complete and metrics.num_contigs:
-        features['assembly_quality_score'] = (
-            metrics.qv * 0.4 + 
-            metrics.busco_complete * 0.4 - 
-            np.log1p(metrics.num_contigs) * 0.2
-        )
-
-    # Coverage metrics
-    if metrics.ai_mean_cov and metrics.ai_median_cov:
-        features['cov_mean_median_ratio'] = metrics.ai_mean_cov / metrics.ai_median_cov
-
-    # Error metrics
-    if metrics.error_rate and metrics.align_err_polishing:
-        features['error_improvement'] = metrics.error_rate - metrics.align_err_polishing
-
-    return features
+    return {
+        key: value
+        for key, value in canonical.items()
+        if key not in {"Sample", "Coverage", "Coverage_effective", "round"}
+    }
 
 
 def check_r1_quality(metrics: PolishingMetrics) -> tuple[bool, str]:
@@ -180,29 +189,13 @@ def prepare_features(
     Returns:
         DataFrame with features in correct order
     """
-    # Convert metrics to dict
-    metrics_dict = asdict(metrics)
-
-    # Remove metadata fields
-    metadata_fields = ['sample_id', 'genus', 'round']
-    for field in metadata_fields:
-        metrics_dict.pop(field, None)
-
-    # Create DataFrame with available features
-    features = pd.DataFrame([metrics_dict])
-
-    # Add missing features as NaN (pipeline will impute them)
-    for feat in feature_names:
-        if feat not in features.columns:
-            features[feat] = np.nan
-
-    # Reorder to match training
-    features = features[feature_names]
-
-    # Replace infinite values with NaN
-    features = features.replace([np.inf, -np.inf], np.nan)
-
-    return features
+    # Preserve the published v1 model contract: only explicitly supplied
+    # fields are aligned here. Canonical history-derived features are activated
+    # together with the trajectory schema and a compatible v2 model artifact.
+    raw = asdict(metrics)
+    for metadata_field in ["sample_id", "genus", "round"]:
+        raw.pop(metadata_field, None)
+    return align_model_features(raw, feature_names)
 
 
 def decide(

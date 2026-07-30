@@ -4,6 +4,7 @@ Tests the decision logic, domain rules, and feature engineering.
 """
 import pytest
 import numpy as np
+import pandas as pd
 from pathlib import Path
 import sys
 
@@ -107,14 +108,15 @@ class TestFeatureEngineering:
         features = engineer_features_online(metrics)
 
         assert isinstance(features, dict)
-        # engineer_features_online returns DERIVED features, not raw metrics
-        assert "assembly_quality_score" in features
-        assert "n50_ratio" in features
+        # Online inference uses the same canonical formulas as training.
+        assert "completeness_score" in features
+        assert "n50_fraction" in features
         assert "busco_per_contig" in features
-        # Verify assembly_quality_score calculation: 35.0*0.4 + 95.5*0.4 - log1p(1)*0.2
-        import numpy as np
-        expected_score = 35.0 * 0.4 + 95.5 * 0.4 - np.log1p(1) * 0.2
-        assert abs(features["assembly_quality_score"] - expected_score) < 0.01
+        assert features["busco_per_contig"] == pytest.approx(95.5 / 2)
+        assert features["n50_fraction"] == pytest.approx(4500000 / 4800001)
+        assert features["completeness_score"] == pytest.approx(
+            0.955 * (1 - 0.0003)
+        )
 
     def test_engineer_features_missing_values(self):
         """Test feature engineering with missing values"""
@@ -129,7 +131,7 @@ class TestFeatureEngineering:
 
         assert isinstance(features, dict)
         # Missing values should be NaN
-        assert np.isnan(features.get("n50", np.nan)) or features.get("n50") is None
+        assert pd.isna(features.get("n50"))
 
 
 class TestDomainRules:
