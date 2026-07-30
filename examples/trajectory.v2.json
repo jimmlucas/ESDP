@@ -1,0 +1,31 @@
+{
+  "schema_version": "2.0.0",
+  "sample_id": "sample_001",
+  "genus": "Escherichia",
+  "coverage": 40.0,
+  "coverage_effective": 38.5,
+  "max_rounds": 5,
+  "incomplete_history_policy": "CONSERVATIVE_CONTINUE",
+  "rounds": [
+    {
+      "round": 1,
+      "qv": 31.0,
+      "busco_complete": 92.0,
+      "n50": 1010000,
+      "num_contigs": 6,
+      "error_rate": 0.009,
+      "total_length": 4900000,
+      "assembly_frac": 0.96
+    },
+    {
+      "round": 2,
+      "qv": 32.0,
+      "busco_complete": 93.0,
+      "n50": 1020000,
+      "num_contigs": 5,
+      "error_rate": 0.008,
+      "total_length": 4900000,
+      "assembly_frac": 0.97
+    }
+  ]
+}
