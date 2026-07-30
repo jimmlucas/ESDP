@@ -132,7 +132,12 @@ def add_trend_features(df):
     return df
 
 def add_plateau_features(df):
-    """Add plateau detection features."""
+    """Add prospective plateau detection features.
+
+    The plateau state at round ``r`` must only depend on observations available
+    through round ``r``. The relative threshold therefore uses the running
+    maximum gain instead of the maximum from the complete trajectory.
+    """
     logger.info("Adding plateau features...")
     
     cov_col = 'Coverage_effective' if 'Coverage_effective' in df.columns else 'Coverage'
@@ -142,10 +147,13 @@ def add_plateau_features(df):
     
     def detect_plateau(group):
         group = group.sort_values('round').copy()
-        max_gain = group['score_improvement'].max()
-        threshold = config['plateau']['relative_threshold'] * max_gain if max_gain > 0 else 0
-        
-        group['is_plateau'] = (group['score_improvement'].abs() < threshold).astype(int)
+        running_max_gain = group['score_improvement'].clip(lower=0).cummax()
+        threshold = config['plateau']['relative_threshold'] * running_max_gain
+
+        group['is_plateau'] = (
+            threshold.gt(0)
+            & group['score_improvement'].abs().lt(threshold)
+        ).astype(int)
         
         # Plateau streak
         streak, run = [], 0
@@ -244,6 +252,18 @@ def validate_features(df):
     
     return df
 
+
+def engineer_features(df):
+    """Build the complete prospective feature table from raw round records."""
+    df = add_basic_deltas(df)
+    df = add_ratio_features(df)
+    df = add_cumulative_features(df)
+    df = add_normalized_to_r1(df)
+    df = add_trend_features(df)
+    df = add_plateau_features(df)
+    df = add_domain_specific_features(df)
+    return validate_features(df)
+
 def main():
     """Run feature engineering pipeline."""
     logger.info("=" * 60)
@@ -253,19 +273,7 @@ def main():
     df = load_data()
     original_cols = len(df.columns)
     
-    # Apply feature engineering steps
-    df = add_basic_deltas(df)
-    df = add_ratio_features(df)
-    df = add_cumulative_features(df)
-    df = add_normalized_to_r1(df)
-    df = add_trend_features(df)
-    df = add_plateau_features(df)
-    df = add_domain_specific_features(df)
-    
-    # Optional: Add polynomial features (can be slow)
-    # df = add_polynomial_features(df, degree=2)
-    
-    df = validate_features(df)
+    df = engineer_features(df)
     
     # Save engineered dataset
     output_path = config['data']['engineered_csv']
