@@ -5,12 +5,13 @@
 """
 
 import pandas as pd
-import numpy as np
 import joblib
 import argparse
 import logging
 import yaml
 from pathlib import Path
+
+from esdp_features import align_model_features
 
 logging.basicConfig(
     level=logging.INFO,
@@ -64,16 +65,7 @@ class PolishingPredictor:
         - Keep missing values as NaN so the pipeline's imputer can handle them.
         - Keep the exact feature order expected by the model.
         """
-        features = pd.DataFrame(np.nan, index=[0], columns=self.feature_names)
-
-        for feature in self.feature_names:
-            if feature in sample_data:
-                features.at[0, feature] = sample_data[feature]
-
-        # Replace infinities with NaN to be consistent with training/inference pipeline
-        features = features.replace([np.inf, -np.inf], np.nan)
-
-        return features
+        return align_model_features(sample_data, self.feature_names)
 
     def predict(self, sample_data, return_probabilities=False):
         """
