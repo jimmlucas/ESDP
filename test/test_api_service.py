@@ -140,6 +140,8 @@ class TestBasicEndpoints:
 
         data = response.json()
         assert "model_version" in data
+        assert data["feature_schema_version"] == "1.0.0"
+        assert data["feature_schema_prospective"] is False
         assert "feature_count" in data
         assert "model_type" in data
 
@@ -180,6 +182,7 @@ class TestPredictionEndpoint:
         assert isinstance(data["reasoning"], str)
         assert isinstance(data["warnings"], list)
         assert isinstance(data["class_probabilities"], dict)
+        assert data["feature_schema_version"] == "1.0.0"
         assert "processing_time_ms" in data
         assert "rule_overrides" in data  # NEW
 

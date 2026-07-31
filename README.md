@@ -24,6 +24,7 @@
 - [Build Dataset](docs/BUILD_DATASET.md)
 - [Usage](docs/USAGE.md)
 - [ESDP v2 trajectory contract](docs/TRAJECTORY_INPUT_SCHEMA.md)
+- [Model manifest and artifact verification](docs/MODEL_MANIFEST.md)
 - [Overview](#overview)
 - [Problem Formulation](#problem-formulation)
 - [Key Features](#key-features)
