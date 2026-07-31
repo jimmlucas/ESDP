@@ -110,6 +110,46 @@ class PipelineStep(StrictManifestModel):
     python_type: str = Field(min_length=1)
 
 
+class PredictionContract(StrictManifestModel):
+    """Ordered model classes and their scientific decision semantics."""
+
+    classes: tuple[int, ...] = Field(min_length=1)
+    recommended_rounds: tuple[int, ...] = Field(min_length=1)
+    labels: tuple[str, ...] = Field(min_length=1)
+
+    @field_validator(
+        "classes",
+        "recommended_rounds",
+        "labels",
+        mode="before",
+    )
+    @classmethod
+    def parse_json_arrays(cls, value):
+        if isinstance(value, list):
+            return tuple(value)
+        return value
+
+    @model_validator(mode="after")
+    def validate_output_mapping(self):
+        lengths = {
+            len(self.classes),
+            len(self.recommended_rounds),
+            len(self.labels),
+        }
+        if len(lengths) != 1:
+            raise ValueError(
+                "classes, recommended_rounds, and labels must have equal length"
+            )
+        if len(self.classes) != len(set(self.classes)):
+            raise ValueError("prediction classes must be unique")
+        if any(round_number < 1 or round_number > 5
+               for round_number in self.recommended_rounds):
+            raise ValueError("recommended rounds must be within R1-R5")
+        if any(not label.strip() for label in self.labels):
+            raise ValueError("prediction labels cannot be blank")
+        return self
+
+
 class Compatibility(StrictManifestModel):
     """Scientifically supported operating domain."""
 
@@ -158,6 +198,7 @@ class ModelManifest(StrictManifestModel):
     training_data: TrainingData
     source: SourceIdentity
     pipeline_steps: tuple[PipelineStep, ...] = Field(min_length=1)
+    prediction_contract: PredictionContract
     compatibility: Compatibility
 
     @field_validator("pipeline_steps", mode="before")
@@ -313,6 +354,13 @@ def _verify_loaded_model(model: Any, manifest: ModelManifest) -> None:
         raise ModelCompatibilityError(
             f"pipeline steps mismatch: expected {expected_steps}, "
             f"got {observed_steps}"
+        )
+
+    actual_classes = tuple(getattr(model, "classes_", ()))
+    if actual_classes != manifest.prediction_contract.classes:
+        raise ModelCompatibilityError(
+            "model classes do not match the prediction contract: expected "
+            f"{manifest.prediction_contract.classes}, got {actual_classes}"
         )
 
     if getattr(model, "split_group_level", None) != (

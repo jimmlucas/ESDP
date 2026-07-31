@@ -19,7 +19,7 @@ import joblib
 import warnings
 from dataclasses import dataclass, asdict, field
 from pathlib import Path
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Sequence
 import pandas as pd
 
 from esdp_features import (
@@ -27,7 +27,11 @@ from esdp_features import (
     FeatureBuilderConfig,
     align_model_features,
 )
-from esdp_manifest import ModelCompatibilityError, load_verified_model
+from esdp_manifest import (
+    ModelCompatibilityError,
+    PredictionContract,
+    load_verified_model,
+)
 
 
 FEATURE_BUILDER = FeatureBuilder(FeatureBuilderConfig())
@@ -162,7 +166,8 @@ def check_r1_quality(metrics: PolishingMetrics) -> tuple[bool, str]:
 def apply_conservative_bias(
     predicted_class: int,
     confidence: float,
-    confidence_threshold: float
+    confidence_threshold: float,
+    ordered_classes: Sequence[int] = (0, 1, 2),
 ) -> tuple[int, bool, str]:
     """
     Apply conservative bias if confidence is below threshold.
@@ -176,7 +181,15 @@ def apply_conservative_bias(
         (adjusted_class, was_applied, reason)
     """
     if confidence < confidence_threshold:
-        adjusted = min(predicted_class + 1, 2)  # Cap at class 2 (Late)
+        try:
+            predicted_position = ordered_classes.index(predicted_class)
+        except ValueError as error:
+            raise ModelCompatibilityError(
+                f"predicted class {predicted_class} is outside the output contract"
+            ) from error
+        adjusted = ordered_classes[
+            min(predicted_position + 1, len(ordered_classes) - 1)
+        ]
         reason = f"Confidence ({confidence:.3f}) below threshold ({confidence_threshold})"
         return adjusted, True, reason
 
@@ -206,12 +219,21 @@ def prepare_features(
     return align_model_features(raw, feature_names)
 
 
+def _resolve_model_path(model_path: Optional[str]) -> Path:
+    """Resolve the bundled default independently of the caller's CWD."""
+    if model_path is None or Path(model_path) == Path(
+        "models/best_model_pipeline.pkl"
+    ):
+        return DEFAULT_MODEL_PATH
+    return Path(model_path).expanduser().resolve()
+
+
 def load_decision_model(
-    model_path: str,
+    model_path: Optional[str] = None,
     manifest_path: Optional[str] = None,
 ):
     """Load the bundled model through its manifest or a custom model directly."""
-    requested_model = Path(model_path).expanduser().resolve()
+    requested_model = _resolve_model_path(model_path)
     selected_manifest = (
         Path(manifest_path).expanduser().resolve()
         if manifest_path is not None
@@ -221,19 +243,23 @@ def load_decision_model(
     )
 
     if selected_manifest is None:
-        return joblib.load(requested_model), "unverified"
+        return joblib.load(requested_model), "unverified", None
 
     verified = load_verified_model(selected_manifest)
     if verified.artifact_path != requested_model:
         raise ModelCompatibilityError(
             "requested model path does not match the manifest artifact"
         )
-    return verified.model, verified.manifest.feature_schema.version
+    return (
+        verified.model,
+        verified.manifest.feature_schema.version,
+        verified.manifest.prediction_contract,
+    )
 
 
 def decide(
     metrics: PolishingMetrics,
-    model_path: str = "models/best_model_pipeline.pkl",
+    model_path: Optional[str] = None,
     confidence_threshold: float = 0.5,
     force_conservative: bool = False,
     manifest_path: Optional[str] = None,
@@ -249,7 +275,7 @@ def decide(
 
     Args:
         metrics: Input polishing metrics
-        model_path: Path to bundled model pipeline
+        model_path: Optional custom model path; defaults to the bundled model
         confidence_threshold: Threshold for automatic conservative bias (default: 0.5)
         force_conservative: If True, force recommendation to R5
         manifest_path: Optional explicit manifest for checksum verification
@@ -257,7 +283,7 @@ def decide(
     Returns:
         Decision object with recommendation and full transparency
     """
-    pipeline, feature_schema_version = load_decision_model(
+    pipeline, feature_schema_version, prediction_contract = load_decision_model(
         model_path,
         manifest_path=manifest_path,
     )
@@ -274,7 +300,18 @@ def decide(
     y_proba = pipeline.predict_proba(X)[0]
 
     # Map to 1-indexed rounds
-    class_to_rounds = {0: 1, 1: 3, 2: 5}
+    if prediction_contract is None:
+        prediction_contract = PredictionContract(
+            classes=(0, 1, 2),
+            recommended_rounds=(1, 3, 5),
+            labels=("Early (R1-R2)", "Medium (R3-R4)", "Late (R5)"),
+        )
+    class_to_rounds = dict(
+        zip(
+            prediction_contract.classes,
+            prediction_contract.recommended_rounds,
+        )
+    )
     predicted_rounds = class_to_rounds[y_pred]
     confidence = float(y_proba[y_pred])
 
@@ -290,7 +327,9 @@ def decide(
     }
 
     # Class names for reasoning
-    class_names = {0: "Early (R1-R2)", 1: "Medium (R3-R4)", 2: "Late (R5)"}
+    class_names = dict(
+        zip(prediction_contract.classes, prediction_contract.labels)
+    )
     base_reasoning = f"ML model predicts {class_names[y_pred]}"
 
     # --------------------------------------------------
@@ -316,7 +355,10 @@ def decide(
     # Rule C: Low confidence override (third priority)
     if not force_conservative and not rule_overrides["r1_quality_override"]:
         adjusted_class, was_applied, bias_reason = apply_conservative_bias(
-            y_pred, confidence, confidence_threshold
+            y_pred,
+            confidence,
+            confidence_threshold,
+            prediction_contract.classes,
         )
         if was_applied:
             predicted_rounds = class_to_rounds[adjusted_class]

@@ -22,7 +22,12 @@ from datetime import datetime
 import sys
 
 # Import decision logic
-from esdp_decide import decide, PolishingMetrics, Decision
+from esdp_decide import (
+    DEFAULT_MANIFEST_PATH,
+    decide,
+    PolishingMetrics,
+    Decision,
+)
 from esdp_manifest import load_verified_model
 
 # ============================================================
@@ -248,7 +253,7 @@ async def get_metrics():
 async def model_info():
     """Return model metadata"""
     try:
-        verified = load_verified_model("models/model_manifest.v1.json")
+        verified = load_verified_model(DEFAULT_MANIFEST_PATH)
         pipeline = verified.model
 
         return {
@@ -258,6 +263,17 @@ async def model_info():
             "feature_schema_prospective": (
                 verified.manifest.feature_schema.prospective
             ),
+            "prediction_contract": {
+                str(class_id): {
+                    "recommended_rounds": rounds,
+                    "label": label,
+                }
+                for class_id, rounds, label in zip(
+                    verified.manifest.prediction_contract.classes,
+                    verified.manifest.prediction_contract.recommended_rounds,
+                    verified.manifest.prediction_contract.labels,
+                )
+            },
             "feature_count": len(getattr(pipeline, 'feature_names', [])),
             "model_type": type(pipeline.named_steps['model']).__name__ if hasattr(pipeline, 'named_steps') else "unknown"
         }
@@ -290,7 +306,6 @@ async def predict(request: PredictionRequest):
         # Make decision with explicit parameters
         decision = decide(
             metrics,
-            model_path="models/best_model_pipeline.pkl",
             confidence_threshold=request.confidence_threshold,
             force_conservative=request.force_conservative
         )

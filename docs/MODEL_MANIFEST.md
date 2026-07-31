@@ -47,6 +47,7 @@ After deserialization, ESDP verifies:
 - model version;
 - exact feature names and order;
 - pipeline step names, order, and implementation types;
+- ordered output classes and their mapping to recommended rounds;
 - sample-level split grouping;
 - label unit.
 
@@ -60,6 +61,10 @@ The manifest declares the current scientific support boundary:
 - Flye assembly;
 - iterative Racon polishing;
 - rounds R1–R5.
+
+The v1 output contract is explicit: model classes `0`, `1`, and `2` map to
+recommendations of `1`, `3`, and `5` polishing rounds, respectively. Loading
+fails if the serialized estimator exposes a different class order.
 
 This does not imply validation for other assemblers, polishers, metagenomes,
 or sequencing platforms.

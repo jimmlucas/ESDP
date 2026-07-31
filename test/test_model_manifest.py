@@ -83,6 +83,8 @@ def test_repository_manifest_verifies_all_recorded_files():
     assert manifest.feature_schema.version == "1.0.0"
     assert manifest.feature_schema.prospective is False
     assert len(manifest.feature_schema.names) == 42
+    assert manifest.prediction_contract.classes == (0, 1, 2)
+    assert manifest.prediction_contract.recommended_rounds == (1, 3, 5)
     assert paths["artifact"].name == "best_model_pipeline.pkl"
 
 
@@ -140,6 +142,24 @@ def test_manifest_model_version_must_match_serialized_model(tmp_path):
         load_verified_model(manifest_path)
 
 
+def test_manifest_prediction_classes_must_match_serialized_model(tmp_path):
+    manifest_path, payload = _copy_manifest_bundle(tmp_path)
+    payload["prediction_contract"]["classes"] = [0, 2, 1]
+    manifest_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    with pytest.raises(ModelCompatibilityError, match="model classes"):
+        load_verified_model(manifest_path)
+
+
+def test_prediction_contract_requires_parallel_output_semantics():
+    with MANIFEST_PATH.open(encoding="utf-8") as manifest_file:
+        payload = json.load(manifest_file)
+    payload["prediction_contract"]["labels"].pop()
+
+    with pytest.raises(ValidationError, match="equal length"):
+        ModelManifest.model_validate(payload)
+
+
 def test_legacy_model_cannot_claim_prospective_v2_compatibility():
     with pytest.raises(ModelCompatibilityError, match="feature schema mismatch"):
         load_verified_model(
@@ -181,6 +201,30 @@ def test_default_decision_reports_verified_feature_schema():
     assert decision.feature_schema_version == "1.0.0"
 
 
+def test_default_decision_is_independent_of_working_directory(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.chdir(tmp_path)
+
+    decision = decide(
+        PolishingMetrics(
+            sample_id="cwd_independent",
+            round=1,
+            coverage=40.0,
+            qv=35.0,
+            busco_complete=95.0,
+            n50=4_000_000,
+            num_contigs=2,
+            error_rate=0.001,
+            total_length=4_800_000,
+        )
+    )
+
+    assert decision.model_version == "v1.1.0"
+    assert decision.feature_schema_version == "1.0.0"
+
+
 def test_batch_predictor_uses_the_verified_manifest_by_default():
     inference = _load_batch_inference_module()
 
@@ -199,3 +243,27 @@ def test_batch_predictor_uses_the_verified_manifest_by_default():
     assert predictor.feature_schema_version == "1.0.0"
     assert prediction["model_version"] == "v1.1.0"
     assert prediction["feature_schema_version"] == "1.0.0"
+
+
+def test_batch_predictor_defaults_are_independent_of_working_directory(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.chdir(tmp_path)
+    inference = _load_batch_inference_module()
+
+    predictor = inference.PolishingPredictor()
+
+    assert predictor.feature_schema_version == "1.0.0"
+
+
+def test_docker_image_contains_the_verified_model_runtime():
+    dockerfile = (REPOSITORY / "Dockerfile").read_text(encoding="utf-8")
+
+    for required_source in (
+        "esdp_features.py",
+        "esdp_manifest.py",
+        "models/feature_names.txt",
+        "models/model_manifest.v1.json",
+    ):
+        assert f"COPY --chown=esdp:esdp {required_source} " in dockerfile
