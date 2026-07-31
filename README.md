@@ -23,6 +23,7 @@
 - [Installation](docs/INSTALL.md)
 - [Build Dataset](docs/BUILD_DATASET.md)
 - [Usage](docs/USAGE.md)
+- [ESDP v2 trajectory contract](docs/TRAJECTORY_INPUT_SCHEMA.md)
 - [Overview](#overview)
 - [Problem Formulation](#problem-formulation)
 - [Key Features](#key-features)
