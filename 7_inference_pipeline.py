@@ -12,6 +12,7 @@ import yaml
 from pathlib import Path
 
 from esdp_features import align_model_features
+from esdp_manifest import ModelCompatibilityError, load_verified_model
 
 logging.basicConfig(
     level=logging.INFO,
@@ -27,15 +28,46 @@ with open("config.yaml", "r") as f:
 class PolishingPredictor:
     """Production predictor for polishing round optimization."""
 
-    def __init__(self, model_path=None, feature_names_path=None):
+    def __init__(
+        self,
+        model_path=None,
+        feature_names_path=None,
+        manifest_path=None,
+    ):
         """Initialize predictor with a bundled model pipeline artifact."""
+        default_model_path = (
+            Path(config["outputs"]["models_dir"]) / "best_model_pipeline.pkl"
+        )
+        default_manifest_path = (
+            Path(config["outputs"]["models_dir"]) / "model_manifest.v1.json"
+        )
         if model_path is None:
-            model_path = Path(config["outputs"]["models_dir"]) / "best_model_pipeline.pkl"
+            model_path = default_model_path
         if feature_names_path is None:
             feature_names_path = Path(config["outputs"]["models_dir"]) / "feature_names.txt"
 
         logger.info(f"Loading model pipeline from {model_path}")
-        self.model = joblib.load(model_path)
+        requested_model = Path(model_path).expanduser().resolve()
+        selected_manifest = (
+            Path(manifest_path).expanduser().resolve()
+            if manifest_path is not None
+            else default_manifest_path.resolve()
+            if requested_model == default_model_path.resolve()
+            else None
+        )
+        if selected_manifest is None:
+            self.model = joblib.load(requested_model)
+            self.feature_schema_version = "unverified"
+        else:
+            verified = load_verified_model(selected_manifest)
+            if verified.artifact_path != requested_model:
+                raise ModelCompatibilityError(
+                    "requested model path does not match the manifest artifact"
+                )
+            self.model = verified.model
+            self.feature_schema_version = (
+                verified.manifest.feature_schema.version
+            )
 
         # Try reading feature names from pipeline metadata; fallback to file
         self.feature_names = None
@@ -112,6 +144,7 @@ class PolishingPredictor:
 
         if hasattr(self.model, "model_version"):
             result["model_version"] = getattr(self.model, "model_version")
+        result["feature_schema_version"] = self.feature_schema_version
 
         return result
 
@@ -151,6 +184,10 @@ class PolishingPredictor:
 
         if all("model_version" in p for p in predictions):
             df["model_version"] = [p["model_version"] for p in predictions]
+        df["feature_schema_version"] = [
+            prediction["feature_schema_version"]
+            for prediction in predictions
+        ]
 
         if output_path:
             df.to_csv(output_path, index=False)
@@ -166,12 +203,14 @@ def main():
     parser.add_argument("--output", help="Output CSV file for predictions")
     parser.add_argument("--model", help="Path to bundled model pipeline (default: models/best_model_pipeline.pkl)")
     parser.add_argument("--features", help="Path to feature names file")
+    parser.add_argument("--manifest", help="Optional model manifest path")
 
     args = parser.parse_args()
 
     predictor = PolishingPredictor(
         model_path=args.model,
-        feature_names_path=args.features
+        feature_names_path=args.features,
+        manifest_path=args.manifest,
     )
 
     results = predictor.predict_from_csv(args.input, args.output)

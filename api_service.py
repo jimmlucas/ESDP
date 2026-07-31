@@ -23,6 +23,7 @@ import sys
 
 # Import decision logic
 from esdp_decide import decide, PolishingMetrics, Decision
+from esdp_manifest import load_verified_model
 
 # ============================================================
 # Structured Logging Setup
@@ -156,6 +157,7 @@ class PredictionResponse(BaseModel):
     warnings: List[str]
     rule_overrides: Dict[str, Any]  # NEW: explicit rule tracking
     model_version: str
+    feature_schema_version: str
     class_probabilities: Dict[str, float]
     processing_time_ms: float
 
@@ -246,11 +248,16 @@ async def get_metrics():
 async def model_info():
     """Return model metadata"""
     try:
-        import joblib
-        pipeline = joblib.load("models/best_model_pipeline.pkl")
+        verified = load_verified_model("models/model_manifest.v1.json")
+        pipeline = verified.model
 
         return {
-            "model_version": getattr(pipeline, 'model_version', 'unknown'),
+            "model_id": verified.manifest.model_id,
+            "model_version": verified.manifest.model_version,
+            "feature_schema_version": verified.manifest.feature_schema.version,
+            "feature_schema_prospective": (
+                verified.manifest.feature_schema.prospective
+            ),
             "feature_count": len(getattr(pipeline, 'feature_names', [])),
             "model_type": type(pipeline.named_steps['model']).__name__ if hasattr(pipeline, 'named_steps') else "unknown"
         }
@@ -321,6 +328,7 @@ async def predict(request: PredictionRequest):
             warnings=decision.warnings,
             rule_overrides=decision.rule_overrides,  # NEW: explicit tracking
             model_version=decision.model_version,
+            feature_schema_version=decision.feature_schema_version,
             class_probabilities=decision.class_probabilities,
             processing_time_ms=round(processing_time_ms, 2)
         )

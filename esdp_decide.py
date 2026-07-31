@@ -27,9 +27,16 @@ from esdp_features import (
     FeatureBuilderConfig,
     align_model_features,
 )
+from esdp_manifest import ModelCompatibilityError, load_verified_model
 
 
 FEATURE_BUILDER = FeatureBuilder(FeatureBuilderConfig())
+DEFAULT_MODEL_PATH = (
+    Path(__file__).resolve().parent / "models" / "best_model_pipeline.pkl"
+)
+DEFAULT_MANIFEST_PATH = (
+    Path(__file__).resolve().parent / "models" / "model_manifest.v1.json"
+)
 
 
 @dataclass
@@ -96,6 +103,7 @@ class Decision:
     rule_overrides: Dict[str, Any]  # NEW: explicit rule tracking
     model_version: str
     class_probabilities: Dict[str, float]
+    feature_schema_version: str = "unverified"
 
 
 def engineer_features_online(metrics: PolishingMetrics) -> Dict[str, float]:
@@ -198,11 +206,37 @@ def prepare_features(
     return align_model_features(raw, feature_names)
 
 
+def load_decision_model(
+    model_path: str,
+    manifest_path: Optional[str] = None,
+):
+    """Load the bundled model through its manifest or a custom model directly."""
+    requested_model = Path(model_path).expanduser().resolve()
+    selected_manifest = (
+        Path(manifest_path).expanduser().resolve()
+        if manifest_path is not None
+        else DEFAULT_MANIFEST_PATH
+        if requested_model == DEFAULT_MODEL_PATH
+        else None
+    )
+
+    if selected_manifest is None:
+        return joblib.load(requested_model), "unverified"
+
+    verified = load_verified_model(selected_manifest)
+    if verified.artifact_path != requested_model:
+        raise ModelCompatibilityError(
+            "requested model path does not match the manifest artifact"
+        )
+    return verified.model, verified.manifest.feature_schema.version
+
+
 def decide(
     metrics: PolishingMetrics,
     model_path: str = "models/best_model_pipeline.pkl",
     confidence_threshold: float = 0.5,
-    force_conservative: bool = False
+    force_conservative: bool = False,
+    manifest_path: Optional[str] = None,
 ) -> Decision:
     """
     Make polishing decision based on metrics.
@@ -218,12 +252,15 @@ def decide(
         model_path: Path to bundled model pipeline
         confidence_threshold: Threshold for automatic conservative bias (default: 0.5)
         force_conservative: If True, force recommendation to R5
+        manifest_path: Optional explicit manifest for checksum verification
 
     Returns:
         Decision object with recommendation and full transparency
     """
-    # Load bundled pipeline
-    pipeline = joblib.load(model_path)
+    pipeline, feature_schema_version = load_decision_model(
+        model_path,
+        manifest_path=manifest_path,
+    )
 
     # Extract metadata
     feature_names = pipeline.feature_names if hasattr(pipeline, 'feature_names') else []
@@ -309,7 +346,8 @@ def decide(
         warnings=warnings_list,
         rule_overrides=rule_overrides,
         model_version=model_version,
-        class_probabilities=class_probs
+        class_probabilities=class_probs,
+        feature_schema_version=feature_schema_version,
     )
 
 

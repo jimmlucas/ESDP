@@ -1,0 +1,119 @@
+{
+  "manifest_version": "1.0.0",
+  "model_id": "esdp-random-forest",
+  "model_version": "v1.1.0",
+  "artifact": {
+    "path": "best_model_pipeline.pkl",
+    "sha256": "41fe6dc4324de91ed57d12bdfe1945a23f7ae262b97b3f1f5d76162d8cbe7577",
+    "format": "joblib",
+    "python_type": "imblearn.pipeline.Pipeline"
+  },
+  "feature_schema": {
+    "version": "1.0.0",
+    "prospective": false,
+    "feature_names_file": {
+      "path": "feature_names.txt",
+      "sha256": "55b4cd2fbc7598a94a1c9d961e140a085dd9e63fa154dde9fbe9d34b0df75b55"
+    },
+    "names": [
+      "n50",
+      "qv",
+      "error_rate",
+      "busco_complete",
+      "busco_fragmented",
+      "busco_missing",
+      "num_contigs",
+      "total_length",
+      "assembly_frac",
+      "assembly_error",
+      "delta_qv",
+      "delta_busco_complete",
+      "delta_n50",
+      "delta_num_contigs",
+      "delta_error_rate",
+      "delta_error_improvement",
+      "delta_assembly_error",
+      "qv_improvement_rate",
+      "busco_per_contig",
+      "n50_fraction",
+      "cost_benefit_ratio",
+      "delta_qv_cumsum",
+      "delta_busco_complete_cumsum",
+      "score_improvement",
+      "gain_cumulative",
+      "qv_from_r1",
+      "n50_from_r1",
+      "error_rate_from_r1",
+      "busco_complete_from_r1",
+      "assembly_frac_from_r1",
+      "delta_qv_trend",
+      "delta_busco_complete_trend",
+      "score_improvement_trend",
+      "is_plateau",
+      "plateau_streak",
+      "completeness_score",
+      "assembly_quality",
+      "polishing_effectiveness",
+      "r1_ok_group",
+      "coverage_est",
+      "mean_edge_coverage",
+      "align_err_consensus"
+    ],
+    "notes": "Legacy v1 feature contract. The plateau features were trained with complete-trajectory thresholds and are not compatible with prospective feature schema 2.0.0."
+  },
+  "training_data": {
+    "dataset": {
+      "path": "../data/training_dataset_with_target.csv",
+      "sha256": "79daf80875e6befd27f77ad1816a63979e68e01316a0f46dc50f3797728a1c9a"
+    },
+    "split_group_level": "Sample",
+    "label_unit": "Sample+Coverage"
+  },
+  "source": {
+    "repository": "https://github.com/jimmlucas/ESDP",
+    "commit": "2c797faad890e3555b7c5510a2e642869b0b9966"
+  },
+  "pipeline_steps": [
+    {
+      "name": "imputer",
+      "python_type": "sklearn.impute._base.SimpleImputer"
+    },
+    {
+      "name": "scaler",
+      "python_type": "sklearn.preprocessing._data.StandardScaler"
+    },
+    {
+      "name": "smote",
+      "python_type": "imblearn.over_sampling._smote.base.SMOTE"
+    },
+    {
+      "name": "model",
+      "python_type": "sklearn.ensemble._forest.RandomForestClassifier"
+    }
+  ],
+  "compatibility": {
+    "sequencing_platforms": [
+      "Oxford Nanopore"
+    ],
+    "organism_scope": [
+      "Bacterial isolate genomes"
+    ],
+    "assemblers": [
+      "Flye"
+    ],
+    "polishers": [
+      "Racon"
+    ],
+    "supported_rounds": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "training_software": {
+      "scikit-learn": "1.5.2",
+      "xgboost": "2.1.3"
+    }
+  }
+}
