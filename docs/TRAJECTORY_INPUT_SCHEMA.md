@@ -58,6 +58,8 @@ A trajectory is rejected when:
 - the history does not start at R1;
 - a round or `max_rounds` is outside R1–R5;
 - a metric is outside its biological range;
+- a boolean or numeric string is supplied in place of a numeric metric;
+- `sample_id` is empty or contains only whitespace;
 - a round contains no observed metric;
 - an unknown field is supplied.
 

@@ -89,6 +89,22 @@ def test_round_metric_ranges_and_unknown_fields_are_rejected():
         RoundMetrics(round=1, qv=30.0, future_metric=12.0)
 
 
+def test_boolean_and_string_values_are_not_coerced_to_metrics():
+    with pytest.raises(ValidationError):
+        RoundMetrics(round=True, qv=30.0)
+
+    with pytest.raises(ValidationError):
+        RoundMetrics(round=1, qv="30.0")
+
+    with pytest.raises(ValidationError):
+        _trajectory(coverage=True)
+
+
+def test_blank_sample_identifier_is_rejected():
+    with pytest.raises(ValidationError):
+        _trajectory(sample_id="   ")
+
+
 def test_round_requires_at_least_one_observed_metric():
     with pytest.raises(ValidationError, match="at least one observed metric"):
         RoundMetrics(round=1)

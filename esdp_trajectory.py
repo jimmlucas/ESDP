@@ -11,7 +11,13 @@ from enum import Enum
 from typing import ClassVar, Literal, Sequence
 
 import pandas as pd
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 from esdp_features import FeatureBuilder
 
@@ -45,7 +51,12 @@ class DecisionAction(str, Enum):
 class RoundMetrics(BaseModel):
     """Raw metrics observed after one polishing round."""
 
-    model_config = ConfigDict(extra="forbid", allow_inf_nan=False, frozen=True)
+    model_config = ConfigDict(
+        extra="forbid",
+        allow_inf_nan=False,
+        frozen=True,
+        strict=True,
+    )
 
     round: int = Field(ge=1, le=5)
 
@@ -119,7 +130,12 @@ class RoundMetrics(BaseModel):
 class PolishingTrajectory(BaseModel):
     """Ordered metrics history for one sample and coverage condition."""
 
-    model_config = ConfigDict(extra="forbid", allow_inf_nan=False, frozen=True)
+    model_config = ConfigDict(
+        extra="forbid",
+        allow_inf_nan=False,
+        frozen=True,
+        strict=True,
+    )
 
     schema_version: Literal["2.0.0"] = FEATURE_SCHEMA_VERSION
     sample_id: str = Field(min_length=1)
@@ -131,6 +147,27 @@ class PolishingTrajectory(BaseModel):
         IncompleteHistoryPolicy.CONSERVATIVE_CONTINUE
     )
     rounds: tuple[RoundMetrics, ...] = Field(min_length=1, max_length=5)
+
+    @field_validator("sample_id", mode="before")
+    @classmethod
+    def normalize_sample_id(cls, value):
+        if isinstance(value, str):
+            return value.strip()
+        return value
+
+    @field_validator("incomplete_history_policy", mode="before")
+    @classmethod
+    def parse_incomplete_history_policy(cls, value):
+        if isinstance(value, str):
+            return IncompleteHistoryPolicy(value)
+        return value
+
+    @field_validator("rounds", mode="before")
+    @classmethod
+    def parse_json_rounds(cls, value):
+        if isinstance(value, list):
+            return tuple(value)
+        return value
 
     @model_validator(mode="after")
     def validate_history(self):
@@ -242,7 +279,7 @@ def build_trajectory_features(
 class DecisionV2(BaseModel):
     """Validated workflow-facing decision contract for ESDP v2."""
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     schema_version: Literal["2.0.0"] = FEATURE_SCHEMA_VERSION
     sample_id: str = Field(min_length=1)
@@ -254,6 +291,27 @@ class DecisionV2(BaseModel):
     reason: str = Field(min_length=1)
     warnings: tuple[str, ...] = ()
     feature_schema_version: Literal["2.0.0"] = FEATURE_SCHEMA_VERSION
+
+    @field_validator("sample_id", "reason", mode="before")
+    @classmethod
+    def normalize_required_text(cls, value):
+        if isinstance(value, str):
+            return value.strip()
+        return value
+
+    @field_validator("action", mode="before")
+    @classmethod
+    def parse_action(cls, value):
+        if isinstance(value, str):
+            return DecisionAction(value)
+        return value
+
+    @field_validator("warnings", mode="before")
+    @classmethod
+    def parse_json_warnings(cls, value):
+        if isinstance(value, list):
+            return tuple(value)
+        return value
 
     @model_validator(mode="after")
     def validate_action(self):
