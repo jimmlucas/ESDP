@@ -18,6 +18,7 @@ Usage:
 import joblib
 import warnings
 from dataclasses import dataclass, asdict, field
+from importlib.resources import files
 from pathlib import Path
 from typing import List, Optional, Dict, Any, Sequence
 import pandas as pd
@@ -35,12 +36,22 @@ from esdp_manifest import (
 
 
 FEATURE_BUILDER = FeatureBuilder(FeatureBuilderConfig())
-DEFAULT_MODEL_PATH = (
-    Path(__file__).resolve().parent / "models" / "best_model_pipeline.pkl"
-)
-DEFAULT_MANIFEST_PATH = (
-    Path(__file__).resolve().parent / "models" / "model_manifest.v1.json"
-)
+
+
+def _bundled_models_dir() -> Path:
+    """Locate model data in a source checkout or an installed wheel."""
+    source_models = Path(__file__).resolve().parent / "models"
+    if (source_models / "model_manifest.v1.json").is_file():
+        return source_models
+    try:
+        return Path(str(files("esdp_assets")))
+    except ModuleNotFoundError:
+        return source_models
+
+
+BUNDLED_MODELS_DIR = _bundled_models_dir()
+DEFAULT_MODEL_PATH = BUNDLED_MODELS_DIR / "best_model_pipeline.pkl"
+DEFAULT_MANIFEST_PATH = BUNDLED_MODELS_DIR / "model_manifest.v1.json"
 
 
 @dataclass
@@ -246,7 +257,7 @@ def load_decision_model(
         return joblib.load(requested_model), "unverified", None
 
     verified = load_verified_model(selected_manifest)
-    if verified.artifact_path != requested_model:
+    if model_path is not None and verified.artifact_path != requested_model:
         raise ModelCompatibilityError(
             "requested model path does not match the manifest artifact"
         )

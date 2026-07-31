@@ -45,6 +45,8 @@ ENV PATH=/home/esdp/.local/bin:$PATH
 COPY --chown=esdp:esdp esdp_decide.py .
 COPY --chown=esdp:esdp esdp_features.py .
 COPY --chown=esdp:esdp esdp_manifest.py .
+COPY --chown=esdp:esdp esdp_trajectory.py .
+COPY --chown=esdp:esdp esdp_cli.py .
 COPY --chown=esdp:esdp api_service.py .
 COPY --chown=esdp:esdp config.yaml .
 COPY --chown=esdp:esdp docker-entrypoint.sh .
@@ -54,7 +56,8 @@ COPY --chown=esdp:esdp models/best_model_pipeline.pkl ./models/
 COPY --chown=esdp:esdp models/feature_names.txt ./models/
 COPY --chown=esdp:esdp models/model_manifest.v1.json ./models/
 
-# Delete the lines that is not necessary
+RUN chmod +x /app/esdp_cli.py && \
+    ln -s /app/esdp_cli.py /usr/local/bin/esdp
 
 RUN chmod +x /app/docker-entrypoint.sh
 

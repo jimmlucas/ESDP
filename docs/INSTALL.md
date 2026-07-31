@@ -2,7 +2,7 @@
 
 ### Prerequisites
 
-- **Python**: 3.8 or higher
+- **Python**: 3.10 or higher
 - **Operating System**: Linux or macOS
 - **RAM**: 8 GB recommended
 - **Storage**: additional space required for dependencies, model artifacts, and benchmark outputs

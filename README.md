@@ -3,7 +3,7 @@
 ### Early Stop Decision Polishing for Long-read Bacterial Genome Polishing
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![Docker Hub](https://img.shields.io/badge/docker-jimmlucas%2Fesdp-blue)](https://hub.docker.com/r/jimmlucas/esdp)
 [![Version](https://img.shields.io/badge/version-v1.0.2-success.svg)](https://github.com/jimmlucas/ESDP/releases/tag/v1.0.2)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18910597.svg)](https://doi.org/10.5281/zenodo.18910597)
@@ -23,6 +23,7 @@
 - [Installation](docs/INSTALL.md)
 - [Build Dataset](docs/BUILD_DATASET.md)
 - [Usage](docs/USAGE.md)
+- [Production CLI](docs/CLI.md)
 - [ESDP v2 trajectory contract](docs/TRAJECTORY_INPUT_SCHEMA.md)
 - [Model manifest and artifact verification](docs/MODEL_MANIFEST.md)
 - [Overview](#overview)

@@ -1,6 +1,10 @@
 #!/bin/bash
 set -euo pipefail
 
+if [ "${1:-}" = "esdp" ] || [ "${1:-}" = "/app/esdp_cli.py" ]; then
+  exec "$@"
+fi
+
 echo "=================================================="
 echo "ESDP - Early Stop Decision Polishing"
 echo "Starting API Service..."
