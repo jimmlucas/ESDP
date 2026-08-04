@@ -52,6 +52,7 @@ py-modules = [
   "esdp_cli",
   "esdp_decide",
   "esdp_features",
+  "esdp_light",
   "esdp_manifest",
   "esdp_trajectory",
 ]
