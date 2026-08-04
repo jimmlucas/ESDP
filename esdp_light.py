@@ -40,27 +40,23 @@ METRIC_REGISTRY = (
         "provisional",
         "Populated in the dataset but not reconstructed by the checked-in collector.",
     ),
-    MetricSpec("n50", "assembly FASTA statistics", MetricCostTier.ROUND_NATIVE, "ready"),
+    MetricSpec(
+        "n50", "assembly FASTA statistics", MetricCostTier.ROUND_NATIVE, "ready"
+    ),
     MetricSpec(
         "num_contigs",
         "assembly FASTA statistics",
         MetricCostTier.ROUND_NATIVE,
-        "provisional",
-        "Currently collected through strict QUAST; requires a lightweight FASTA extractor.",
+        "ready",
     ),
     MetricSpec(
         "total_length",
         "assembly FASTA statistics",
         MetricCostTier.ROUND_NATIVE,
-        "provisional",
-        "Currently collected through strict QUAST; requires a lightweight FASTA extractor.",
+        "ready",
     ),
     MetricSpec(
-        "gc",
-        "assembly FASTA statistics",
-        MetricCostTier.ROUND_NATIVE,
-        "provisional",
-        "Currently collected through strict QUAST; requires a lightweight FASTA extractor.",
+        "gc", "assembly FASTA statistics", MetricCostTier.ROUND_NATIVE, "ready"
     ),
     MetricSpec("min_overlap", "Flye log", MetricCostTier.STATIC_ONCE, "ready"),
     MetricSpec("overlap_based_coverage", "Flye log", MetricCostTier.STATIC_ONCE, "ready"),
@@ -141,7 +137,16 @@ LIGHT_ALIGNMENT_CANDIDATES = tuple(
 LIGHT_PROSPECTIVE_DERIVED_FEATURES = (
     "delta_n50",
     "delta_num_contigs",
+    "delta_total_length",
+    "delta_gc",
     "n50_from_r1",
+    "num_contigs_from_r1",
+    "total_length_from_r1",
+    "gc_from_r1",
+    "delta_n50_trend",
+    "delta_num_contigs_trend",
+    "delta_total_length_trend",
+    "delta_gc_trend",
 )
 
 

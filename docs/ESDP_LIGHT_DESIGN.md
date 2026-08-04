@@ -44,8 +44,35 @@ round.
 `esdp_light.py` encodes these tiers. The default light contract accepts only
 deployment-ready metrics. Alignment candidates require an explicit opt-in and
 must not be used for a release artifact while their status is provisional.
-Metrics currently obtained only through strict per-round QUAST are also
-provisional until the next step adds a lightweight FASTA-statistics extractor.
+
+## Lightweight round observation
+
+`esdp_light_metrics.py` now provides a reference-free FASTA extractor for
+`n50`, `num_contigs`, `total_length`, and `gc`. It reads plain or gzip FASTA
+directly, rejects empty records and invalid sequence symbols, and requires no
+QUAST or BUSCO execution. GC percentage uses A, C, G, and T as its denominator;
+ambiguous IUPAC bases are excluded from that denominator and reported
+separately. These four assembly metrics are therefore deployment-ready.
+
+The same module defines a prospective alignment contract for
+`mapping_error_rate`. Samtools statistics are accepted only when the alignment
+reference and the current polished assembly have identical SHA-256 content
+identities. The observation records hashes for the assembly, alignment
+reference, and statistics file. Missing required Samtools `SN` fields are an
+error; the collector does not invent defaults. This closes the pre-polish versus
+post-polish ambiguity, but alignment metrics remain provisional until the
+Minimap2/Samtools command, versions, runtime, and portability are validated.
+Because a standalone Samtools stats file does not embed the reference hash,
+this guarantee also depends on the future workflow producing the alignment,
+stats, and provenance record in one isolated process. The current collector
+verifies the supplied reference identity; it does not claim that an unrelated
+stats file is cryptographically self-authenticating.
+
+`esdp_light_features.py` builds round deltas, changes from R1, and delta trends
+for the four FASTA metrics. Each `Sample+Coverage` trajectory must begin at R1
+and have contiguous rounds. Features for round Rn are calculated only from
+R1...Rn; automated truncation tests verify that changing a future round cannot
+alter any earlier feature row.
 
 ## Explicit exclusions
 

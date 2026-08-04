@@ -39,6 +39,16 @@ def test_metric_registry_has_unique_names():
     assert len(names) == len(set(names))
 
 
+def test_reference_free_fasta_metrics_are_deployment_ready():
+    ready = {
+        spec.name
+        for spec in METRIC_REGISTRY
+        if spec.deployment_status == "ready"
+    }
+
+    assert {"n50", "num_contigs", "total_length", "gc"} <= ready
+
+
 def test_alignment_features_remain_provisional_by_default():
     with pytest.raises(
         LightFeatureContractError,
