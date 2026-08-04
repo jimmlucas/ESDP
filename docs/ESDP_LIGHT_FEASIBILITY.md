@@ -158,3 +158,6 @@ Machine-readable outputs are stored in
 - per-fold and per-round metrics;
 - feature importances;
 - exploratory threshold sensitivity.
+
+The predeclared follow-up formulation study is documented in
+`ESDP_LIGHT_BINARY_FEASIBILITY.md`.

@@ -145,3 +145,11 @@ current light candidates show weak signal but do not satisfy the classification
 or safety-savings release gates. The result is a no-go for a production light
 model and a go for a bounded endpoint/formulation study; the frozen held-out
 test samples remain untouched.
+
+The follow-up direct binary formulation study is reported in
+`ESDP_LIGHT_BINARY_FEASIBILITY.md`. Predicting `CONTINUE` versus
+`STOP_ELIGIBLE` reduces round-selection error relative to the three-class
+formulation, but the causal light candidates still fail the release gates. A
+historical leakage control also demonstrates that retrospective plateau
+features substantially inflate apparent performance. Direct binary stopping
+is retained as the research architecture, not as a deployable model.
