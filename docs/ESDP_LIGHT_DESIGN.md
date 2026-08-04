@@ -138,3 +138,10 @@ row-level classification. It must report:
 No candidate becomes an ESDP-light release merely because it improves one
 classification metric. Safety, calibration, compute savings, provenance, and
 domain limitations are joint release gates.
+
+The first development-only feasibility experiment is reported in
+`ESDP_LIGHT_FEASIBILITY.md`. Under sample-grouped out-of-fold evaluation, the
+current light candidates show weak signal but do not satisfy the classification
+or safety-savings release gates. The result is a no-go for a production light
+model and a go for a bounded endpoint/formulation study; the frozen held-out
+test samples remain untouched.
