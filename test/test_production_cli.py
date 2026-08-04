@@ -387,6 +387,90 @@ def test_light_history_rejects_mixed_sample_observations(tmp_path):
     assert "same sample_id" in result.stderr
 
 
+def test_init_and_record_round_create_prospective_project(tmp_path):
+    project = tmp_path / "prospective-study"
+    initialized = _run_cli(
+        "init",
+        "--project-directory",
+        str(project),
+        "--project-id",
+        "study-cli",
+        "--platform",
+        "ont",
+        "--chemistry",
+        "R10.4.1",
+        "--basecaller",
+        "Dorado",
+        "--basecaller-version",
+        "0.9.0",
+        "--basecaller-model",
+        "sup-v5",
+        "--assembler",
+        "Flye",
+        "--assembler-version",
+        "2.9.6",
+        "--polisher",
+        "Racon",
+        "--polisher-version",
+        "1.5.0",
+        cwd=tmp_path,
+    )
+
+    assert initialized.returncode == 0
+    assert initialized.stderr == ""
+    assert json.loads(initialized.stdout)["decision_enabled"] is False
+    assembly = tmp_path / "r1.fasta"
+    assembly.write_text(">contig\nACGTACGT\n", encoding="utf-8")
+    recorded = _run_cli(
+        "record-round",
+        "--project-directory",
+        str(project),
+        "--sample-id",
+        "sample-cli",
+        "--coverage-effective",
+        "40",
+        "--round",
+        "1",
+        "--assembly",
+        str(assembly),
+        cwd=tmp_path,
+    )
+
+    assert recorded.returncode == 0
+    assert recorded.stderr == ""
+    receipt = json.loads(recorded.stdout)
+    assert receipt["decision_enabled"] is False
+    assert Path(receipt["observation_file"]).is_file()
+    assert Path(receipt["history_file"]).is_file()
+    assert Path(receipt["record_file"]).is_file()
+
+
+def test_init_rejects_incomplete_ont_provenance(tmp_path):
+    result = _run_cli(
+        "init",
+        "--project-directory",
+        str(tmp_path / "study"),
+        "--project-id",
+        "study-cli",
+        "--platform",
+        "ont",
+        "--chemistry",
+        "R10.4.1",
+        "--assembler",
+        "Flye",
+        "--assembler-version",
+        "2.9.6",
+        "--polisher",
+        "Racon",
+        "--polisher-version",
+        "1.5.0",
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 3
+    assert "basecalling provenance" in result.stderr
+
+
 def test_explicit_manifest_does_not_require_repeating_model_path(tmp_path):
     result = _run_cli(
         "decide",
@@ -470,6 +554,7 @@ def test_docker_runtime_exposes_cli_without_api_banner():
     assert "COPY --chown=esdp:esdp esdp_cli.py ." in dockerfile
     assert "COPY --chown=esdp:esdp esdp_light_metrics.py ." in dockerfile
     assert "COPY --chown=esdp:esdp esdp_light_history.py ." in dockerfile
+    assert "COPY --chown=esdp:esdp esdp_instrumentation.py ." in dockerfile
     assert "ln -s /app/esdp_cli.py /usr/local/bin/esdp" in dockerfile
     assert '[ "${1:-}" = "esdp" ]' in entrypoint
     assert "!models/feature_names.txt" in dockerignore
