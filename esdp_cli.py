@@ -23,6 +23,7 @@ from pydantic import (
 )
 
 from esdp_decide import DEFAULT_MANIFEST_PATH, PolishingMetrics, decide
+from esdp_light_metrics import LightMetricError, collect_light_round_observation
 from esdp_manifest import (
     ManifestError,
     load_verified_model,
@@ -322,6 +323,18 @@ def command_model_info(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def command_light_observe(args: argparse.Namespace) -> dict[str, Any]:
+    """Collect one model-independent, provenance-aware light observation."""
+    observation = collect_light_round_observation(
+        sample_id=args.sample_id,
+        round_number=args.round_number,
+        assembly_path=args.assembly,
+        samtools_stats_path=args.samtools_stats,
+        alignment_reference_path=args.alignment_reference,
+    )
+    return observation.model_dump(mode="json")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="esdp",
@@ -411,6 +424,43 @@ def build_parser() -> argparse.ArgumentParser:
         help="also verify the recorded training dataset checksum",
     )
     info_parser.set_defaults(handler=command_model_info)
+
+    light_observe_parser = subparsers.add_parser(
+        "light-observe",
+        help="collect low-cost metrics from one polished assembly",
+    )
+    light_observe_parser.add_argument(
+        "--sample-id",
+        required=True,
+        help="stable biological sample identifier",
+    )
+    light_observe_parser.add_argument(
+        "--round",
+        dest="round_number",
+        required=True,
+        type=int,
+        help="current polishing round (1-5)",
+    )
+    light_observe_parser.add_argument(
+        "--assembly",
+        required=True,
+        help="current polished assembly FASTA or FASTA.gz",
+    )
+    light_observe_parser.add_argument(
+        "--samtools-stats",
+        help="optional samtools stats generated for this round",
+    )
+    light_observe_parser.add_argument(
+        "--alignment-reference",
+        help="FASTA used as the optional alignment reference",
+    )
+    light_observe_parser.add_argument(
+        "--output",
+        "-o",
+        default="-",
+        help="observation JSON path, or - for stdout",
+    )
+    light_observe_parser.set_defaults(handler=command_light_observe)
     return parser
 
 
@@ -440,7 +490,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.verbose:
             print(f"esdp: {args.command} completed", file=sys.stderr)
         return EXIT_SUCCESS
-    except InputContractError as error:
+    except (InputContractError, LightMetricError) as error:
         print(f"esdp: invalid input: {error}", file=sys.stderr)
         return EXIT_INVALID_INPUT
     except ManifestError as error:

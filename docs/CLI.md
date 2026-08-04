@@ -103,6 +103,45 @@ That option is expected to fail in a minimal installed wheel or runtime
 container because training data are deliberately excluded from the core
 package.
 
+### `esdp light-observe`
+
+Collect one versioned ESDP-light observation directly from the polished
+assembly, without running the legacy model:
+
+```bash
+esdp light-observe \
+  --sample-id sample_001 \
+  --round 2 \
+  --assembly polished_r2.fasta \
+  --output observation.r2.json
+```
+
+The command calculates reference-free N50, contig count, total length, GC,
+ACGT bases, and ambiguous bases. It records the SHA-256 identity of the FASTA
+and accepts plain or gzip-compressed input.
+
+Optional post-polish alignment statistics require both inputs:
+
+```bash
+esdp light-observe \
+  --sample-id sample_001 \
+  --round 2 \
+  --assembly polished_r2.fasta \
+  --samtools-stats polished_r2.stats \
+  --alignment-reference polished_r2.fasta \
+  --output observation.r2.json
+```
+
+The supplied alignment reference must be byte-identical to the current
+polished assembly. The JSON records hashes for the assembly, supplied
+reference, and Samtools artifact. The stats parser requires explicit `error
+rate`, `bases mapped (cigar)`, and `mismatches` summary fields and never fills
+missing values with defaults.
+
+This command does not make a stopping decision. `mapping_error_rate` remains
+an experimental candidate until the complete Minimap2/Samtools process,
+software versions, and incremental cost are frozen and evaluated.
+
 ## Exit codes
 
 | Code | Meaning |
@@ -145,3 +184,30 @@ esdp decide \
 
 The process should treat exit codes `3`–`5` conservatively and continue
 polishing unless the workflow policy explicitly chooses to fail.
+
+An ESDP-light collection process can remain independent of model inference:
+
+```nextflow
+process ESDP_LIGHT_OBSERVE {
+    tag "${meta.id}:R${round}"
+
+    input:
+    tuple val(meta), val(round), path(assembly)
+
+    output:
+    tuple val(meta), val(round), path("*.esdp-light.json"), emit: observation
+
+    script:
+    """
+    esdp light-observe \\
+      --sample-id '${meta.id}' \\
+      --round ${round} \\
+      --assembly ${assembly} \\
+      --output '${meta.id}.R${round}.esdp-light.json'
+    """
+}
+```
+
+Alignment generation and `light-observe` should eventually run under one
+versioned workflow contract so the supplied reference cannot be separated
+from the process that created the statistics.

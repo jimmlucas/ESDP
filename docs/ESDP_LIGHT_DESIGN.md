@@ -74,6 +74,11 @@ and have contiguous rounds. Features for round Rn are calculated only from
 R1...Rn; automated truncation tests verify that changing a future round cannot
 alter any earlier feature row.
 
+The production CLI exposes this collection contract as `esdp light-observe`.
+Its deterministic, atomically written JSON is a model-independent workflow
+artifact: producing it does not imply that an ESDP-light classifier has been
+trained, selected, calibrated, or released.
+
 ## Explicit exclusions
 
 The light model must exclude:
