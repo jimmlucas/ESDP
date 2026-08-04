@@ -49,6 +49,26 @@ def _valid_metrics():
     }
 
 
+def _light_observation(sample_id, round_number, *, n50, num_contigs):
+    return {
+        "schema_version": "1.0.0",
+        "sample_id": sample_id,
+        "round": round_number,
+        "assembly_sha256": f"{round_number:064x}",
+        "fasta": {
+            "num_contigs": num_contigs,
+            "total_length": 1000 + (round_number - 1) * 10,
+            "n50": n50,
+            "gc_percent": 50.0 + (round_number - 1) * 0.1,
+            "acgt_bases": 1000 + (round_number - 1) * 10,
+            "ambiguous_bases": 0,
+        },
+        "alignment": None,
+        "alignment_reference_sha256": None,
+        "samtools_stats_sha256": None,
+    }
+
+
 def test_version_command_works_outside_repository(tmp_path):
     result = _run_cli("--version", cwd=tmp_path)
 
@@ -177,6 +197,196 @@ def test_model_info_verifies_bundled_artifact_outside_repository(tmp_path):
     assert model_info["training_data_verified"] is False
 
 
+def test_light_observe_emits_deterministic_reference_free_json(tmp_path):
+    assembly = tmp_path / "polished.fasta"
+    assembly.write_text(
+        ">long\nGGCCAAAANN\n>short\nATGC\n",
+        encoding="utf-8",
+    )
+    arguments = (
+        "light-observe",
+        "--sample-id",
+        "sample-light",
+        "--round",
+        "2",
+        "--assembly",
+        str(assembly),
+    )
+
+    first = _run_cli(*arguments, cwd=tmp_path)
+    second = _run_cli(*arguments, cwd=tmp_path)
+
+    assert first.returncode == 0
+    assert first.stderr == ""
+    assert first.stdout == second.stdout
+    observation = json.loads(first.stdout)
+    assert observation["schema_version"] == "1.0.0"
+    assert observation["sample_id"] == "sample-light"
+    assert observation["round"] == 2
+    assert len(observation["assembly_sha256"]) == 64
+    assert observation["fasta"] == {
+        "acgt_bases": 12,
+        "ambiguous_bases": 2,
+        "gc_percent": 50.0,
+        "n50": 10,
+        "num_contigs": 2,
+        "total_length": 14,
+    }
+    assert observation["alignment"] is None
+    assert observation["alignment_reference_sha256"] is None
+    assert observation["samtools_stats_sha256"] is None
+
+
+def test_light_observe_writes_atomic_alignment_observation(tmp_path):
+    assembly = tmp_path / "polished.fasta"
+    assembly.write_text(">contig\nACGTACGT\n", encoding="utf-8")
+    stats = tmp_path / "alignment.stats"
+    stats.write_text(
+        "SN\terror rate:\t0.0125\n"
+        "SN\tbases mapped (cigar):\t1,000\n"
+        "SN\tmismatches:\t12\n",
+        encoding="utf-8",
+    )
+    output = tmp_path / "observation.json"
+
+    result = _run_cli(
+        "light-observe",
+        "--sample-id",
+        "sample-light",
+        "--round",
+        "3",
+        "--assembly",
+        str(assembly),
+        "--samtools-stats",
+        str(stats),
+        "--alignment-reference",
+        str(assembly),
+        "--output",
+        str(output),
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 0
+    assert result.stdout == ""
+    assert result.stderr == ""
+    observation = json.loads(output.read_text(encoding="utf-8"))
+    assert observation["alignment"]["mapping_error_rate"] == 0.0125
+    assert observation["alignment_reference_sha256"] == (
+        observation["assembly_sha256"]
+    )
+    assert not list(tmp_path.glob(".observation.json.*.tmp"))
+
+
+def test_light_observe_rejects_mismatched_alignment_reference(tmp_path):
+    assembly = tmp_path / "polished.fasta"
+    assembly.write_text(">contig\nACGT\n", encoding="utf-8")
+    reference = tmp_path / "pre-polish.fasta"
+    reference.write_text(">contig\nAGGT\n", encoding="utf-8")
+    stats = tmp_path / "alignment.stats"
+    stats.write_text(
+        "SN\terror rate:\t0.01\n"
+        "SN\tbases mapped (cigar):\t100\n"
+        "SN\tmismatches:\t1\n",
+        encoding="utf-8",
+    )
+
+    result = _run_cli(
+        "light-observe",
+        "--sample-id",
+        "sample-light",
+        "--round",
+        "2",
+        "--assembly",
+        str(assembly),
+        "--samtools-stats",
+        str(stats),
+        "--alignment-reference",
+        str(reference),
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 3
+    assert result.stdout == ""
+    assert "not the polished assembly" in result.stderr
+
+
+def test_light_history_aggregates_observations_in_round_order(tmp_path):
+    round_1 = tmp_path / "r1.json"
+    round_2 = tmp_path / "r2.json"
+    round_1.write_text(
+        json.dumps(
+            _light_observation(
+                "sample-light",
+                1,
+                n50=100,
+                num_contigs=5,
+            )
+        ),
+        encoding="utf-8",
+    )
+    round_2.write_text(
+        json.dumps(
+            _light_observation(
+                "sample-light",
+                2,
+                n50=130,
+                num_contigs=4,
+            )
+        ),
+        encoding="utf-8",
+    )
+
+    result = _run_cli(
+        "light-history",
+        "--observation",
+        str(round_2),
+        "--observation",
+        str(round_1),
+        "--coverage-effective",
+        "40",
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 0
+    assert result.stderr == ""
+    history = json.loads(result.stdout)
+    assert history["schema_version"] == "1.0.0"
+    assert history["current_round"] == 2
+    assert history["coverage_effective"] == 40.0
+    assert [row["round"] for row in history["rows"]] == [1, 2]
+    assert history["rows"][0]["delta_n50"] is None
+    assert history["rows"][1]["delta_n50"] == 30.0
+    assert history["rows"][1]["num_contigs_from_r1"] == -1.0
+
+
+def test_light_history_rejects_mixed_sample_observations(tmp_path):
+    round_1 = tmp_path / "r1.json"
+    round_2 = tmp_path / "r2.json"
+    round_1.write_text(
+        json.dumps(_light_observation("sample-a", 1, n50=100, num_contigs=5)),
+        encoding="utf-8",
+    )
+    round_2.write_text(
+        json.dumps(_light_observation("sample-b", 2, n50=130, num_contigs=4)),
+        encoding="utf-8",
+    )
+
+    result = _run_cli(
+        "light-history",
+        "--observation",
+        str(round_1),
+        "--observation",
+        str(round_2),
+        "--coverage-effective",
+        "40",
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 3
+    assert result.stdout == ""
+    assert "same sample_id" in result.stderr
+
+
 def test_explicit_manifest_does_not_require_repeating_model_path(tmp_path):
     result = _run_cli(
         "decide",
@@ -258,6 +468,8 @@ def test_docker_runtime_exposes_cli_without_api_banner():
     )
 
     assert "COPY --chown=esdp:esdp esdp_cli.py ." in dockerfile
+    assert "COPY --chown=esdp:esdp esdp_light_metrics.py ." in dockerfile
+    assert "COPY --chown=esdp:esdp esdp_light_history.py ." in dockerfile
     assert "ln -s /app/esdp_cli.py /usr/local/bin/esdp" in dockerfile
     assert '[ "${1:-}" = "esdp" ]' in entrypoint
     assert "!models/feature_names.txt" in dockerignore

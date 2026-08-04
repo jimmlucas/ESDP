@@ -103,6 +103,79 @@ That option is expected to fail in a minimal installed wheel or runtime
 container because training data are deliberately excluded from the core
 package.
 
+### `esdp light-observe`
+
+Collect one versioned ESDP-light observation directly from the polished
+assembly, without running the legacy model:
+
+```bash
+esdp light-observe \
+  --sample-id sample_001 \
+  --round 2 \
+  --assembly polished_r2.fasta \
+  --output observation.r2.json
+```
+
+The command calculates reference-free N50, contig count, total length, GC,
+ACGT bases, and ambiguous bases. It records the SHA-256 identity of the FASTA
+and accepts plain or gzip-compressed input.
+
+Optional post-polish alignment statistics require both inputs:
+
+```bash
+esdp light-observe \
+  --sample-id sample_001 \
+  --round 2 \
+  --assembly polished_r2.fasta \
+  --samtools-stats polished_r2.stats \
+  --alignment-reference polished_r2.fasta \
+  --output observation.r2.json
+```
+
+The supplied alignment reference must be byte-identical to the current
+polished assembly. The JSON records hashes for the assembly, supplied
+reference, and Samtools artifact. The stats parser requires explicit `error
+rate`, `bases mapped (cigar)`, and `mismatches` summary fields and never fills
+missing values with defaults.
+
+This command does not make a stopping decision. `mapping_error_rate` remains
+an experimental candidate until the complete Minimap2/Samtools process,
+software versions, and incremental cost are frozen and evaluated.
+
+### `esdp light-history`
+
+Aggregate all observations available for one sample and effective-coverage
+trajectory:
+
+```bash
+esdp light-history \
+  --observation observation.r1.json \
+  --observation observation.r2.json \
+  --coverage-effective 40 \
+  --output history.r2.json
+```
+
+Observation arguments may arrive in any order. The command validates that
+they use observation schema `1.0.0`, belong to one sample, start at R1, and
+form a contiguous sequence without duplicate rounds. It then emits history
+schema `1.0.0` with:
+
+- exact assembly hashes for every source round;
+- the deployment-ready N50, contig count, total length, and GC values;
+- round-to-round deltas;
+- changes relative to R1;
+- changes in the deltas between consecutive rounds;
+- an ordered feature-name contract.
+
+Unavailable causal quantities are JSON `null`: R1 has no round delta, and R1
+and R2 have no delta trend. The output never encodes these states as nonstandard
+`NaN` values. Future observations cannot modify previously generated rows.
+
+The aggregator deliberately excludes provisional alignment values even when
+an input observation contains them. This prevents `mapping_error_rate` from
+entering an inference contract before its workflow and cost validation gates
+are complete.
+
 ## Exit codes
 
 | Code | Meaning |
@@ -145,3 +218,57 @@ esdp decide \
 
 The process should treat exit codes `3`–`5` conservatively and continue
 polishing unless the workflow policy explicitly chooses to fail.
+
+An ESDP-light collection process can remain independent of model inference:
+
+```nextflow
+process ESDP_LIGHT_OBSERVE {
+    tag "${meta.id}:R${round}"
+
+    input:
+    tuple val(meta), val(round), path(assembly)
+
+    output:
+    tuple val(meta), val(round), path("*.esdp-light.json"), emit: observation
+
+    script:
+    """
+    esdp light-observe \\
+      --sample-id '${meta.id}' \\
+      --round ${round} \\
+      --assembly ${assembly} \\
+      --output '${meta.id}.R${round}.esdp-light.json'
+    """
+}
+```
+
+Alignment generation and `light-observe` should eventually run under one
+versioned workflow contract so the supplied reference cannot be separated
+from the process that created the statistics.
+
+After collecting the rounds currently available, a separate process can
+produce the causal history artifact:
+
+```nextflow
+process ESDP_LIGHT_HISTORY {
+    tag "${meta.id}:R${round}"
+
+    input:
+    tuple val(meta), val(round), val(coverage_effective), path(observations)
+
+    output:
+    tuple val(meta), val(round), path("*.esdp-light.history.json"), emit: history
+
+    script:
+    def observation_args = observations.collect { "--observation ${it}" }.join(' ')
+    """
+    esdp light-history \\
+      ${observation_args} \\
+      --coverage-effective ${coverage_effective} \\
+      --output '${meta.id}.R${round}.esdp-light.history.json'
+    """
+}
+```
+
+This process still performs feature construction only. A later model process
+must consume a frozen feature schema and verified ESDP-light manifest.

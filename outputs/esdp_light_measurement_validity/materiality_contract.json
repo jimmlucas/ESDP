@@ -1,0 +1,28 @@
+{
+  "contract_version": "0.1.0-development",
+  "global_limitations": {
+    "busco_provenance_complete": false,
+    "held_out_test_may_be_opened": false,
+    "model_retraining_authorized": false,
+    "nextflow_adaptive_stopping_authorized": false,
+    "technical_repeatability_estimable": false
+  },
+  "metrics": {
+    "assembly_fraction_error": {
+      "finding": "assembly_error = abs(assembly_frac - 1)",
+      "required_action": "Use one representation and record expected-genome-size provenance; validate the 0.01 tolerance externally.",
+      "status": "provisional_redundant_representation"
+    },
+    "busco_complete": {
+      "finding": "The 1 percentage-point threshold resolves to at least two of 116 markers, but 9.4% of trajectories show only a transient >1-point gain.",
+      "required_action": "Store complete marker counts plus BUSCO version, lineage dataset, creation date, mode, and options; justify whether a transient two-marker gain is a material stopping outcome.",
+      "status": "provisional"
+    },
+    "qv_error_pair": {
+      "finding": "qv = -10 * log10(error_rate)",
+      "required_action": "Use one same-round, versioned mapping-error measurement; derive QV from it if needed, but never count both endpoints.",
+      "status": "invalid_redundant_and_provenance_ambiguous"
+    }
+  },
+  "release_gate": "blocked"
+}

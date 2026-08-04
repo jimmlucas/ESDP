@@ -1,0 +1,141 @@
+{
+  "adjacent_change_audit": [
+    {
+      "absolute_change_exceeds_tolerance_fraction": 0.015748031496062992,
+      "median_change": -0.000822330892967571,
+      "metric": "qv",
+      "n_adjacent_changes": 508,
+      "negative_fraction": 0.639763779527559,
+      "p05_change": -0.025619483303961132,
+      "p95_change": 0.007474398180434781,
+      "positive_fraction": 0.36023622047244097,
+      "tolerance": 0.05,
+      "zero_fraction": 0.0
+    },
+    {
+      "absolute_change_exceeds_tolerance_fraction": 0.2952755905511811,
+      "median_change": 0.0,
+      "metric": "busco_complete",
+      "n_adjacent_changes": 508,
+      "negative_fraction": 0.31299212598425197,
+      "p05_change": -2.6000000000000085,
+      "p95_change": 2.6000000000000014,
+      "positive_fraction": 0.31496062992125984,
+      "tolerance": 1.0,
+      "zero_fraction": 0.3720472440944882
+    },
+    {
+      "absolute_change_exceeds_tolerance_fraction": 0.04921259842519685,
+      "median_change": 1.0405000000001524e-05,
+      "metric": "error_rate",
+      "n_adjacent_changes": 508,
+      "negative_fraction": 0.36023622047244097,
+      "p05_change": -0.00011242599999999845,
+      "p95_change": 0.0004794409999999979,
+      "positive_fraction": 0.639763779527559,
+      "tolerance": 0.0005,
+      "zero_fraction": 0.0
+    },
+    {
+      "absolute_change_exceeds_tolerance_fraction": 0.0,
+      "median_change": 2.53968253970116e-06,
+      "metric": "assembly_error",
+      "n_adjacent_changes": 508,
+      "negative_fraction": 0.4625984251968504,
+      "p05_change": -0.00018721428571437138,
+      "p95_change": 0.00029897142857148427,
+      "positive_fraction": 0.5354330708661418,
+      "tolerance": 0.01,
+      "zero_fraction": 0.001968503937007874
+    }
+  ],
+  "audit_schema_version": "1.0.0",
+  "busco_audit": {
+    "adjacent_change_negative_fraction": 0.31299212598425197,
+    "adjacent_change_positive_fraction": 0.31496062992125984,
+    "adjacent_change_zero_fraction": 0.3720472440944882,
+    "busco_n_values": [
+      116
+    ],
+    "max_rounding_residual_percent": 0.04827586206896939,
+    "mean_r1_to_r5_change": -0.07795275590551214,
+    "missing_provenance_fields": [
+      "busco_version",
+      "busco_lineage_dataset",
+      "busco_lineage_creation_date",
+      "busco_mode",
+      "busco_options"
+    ],
+    "one_percent_threshold_requires_at_least_two_markers": true,
+    "percent_resolution_values": [
+      0.8620689655172413
+    ],
+    "r1_any_future_gain_gt_1pp_fraction": 0.2992125984251969,
+    "r1_terminal_gain_gt_1pp_fraction": 0.2047244094488189,
+    "r1_transient_gain_only_fraction": 0.09448818897637795
+  },
+  "dataset_sha256": "79daf80875e6befd27f77ad1816a63979e68e01316a0f46dc50f3797728a1c9a",
+  "dependency_audit": {
+    "assembly_error_formula": "assembly_error = abs(assembly_frac - 1)",
+    "assembly_error_is_exact_fraction_transform": true,
+    "assembly_error_max_absolute_residual": 9.8879238130678e-17,
+    "qv_error_max_absolute_residual": 5.329070518200751e-15,
+    "qv_formula": "qv = -10 * log10(error_rate)",
+    "qv_is_exact_error_transform": true
+  },
+  "external_contract_basis": {
+    "requirements_used": [
+      "scores are percentages of lineage-specific marker genes",
+      "report BUSCO and dependency versions",
+      "report lineage dataset and creation date",
+      "report BUSCO options and assessed assembly version"
+    ],
+    "source": "BUSCO official user guide",
+    "url": "https://busco.ezlab.org/busco_userguide.html"
+  },
+  "materiality_contract": {
+    "contract_version": "0.1.0-development",
+    "global_limitations": {
+      "busco_provenance_complete": false,
+      "held_out_test_may_be_opened": false,
+      "model_retraining_authorized": false,
+      "nextflow_adaptive_stopping_authorized": false,
+      "technical_repeatability_estimable": false
+    },
+    "metrics": {
+      "assembly_fraction_error": {
+        "finding": "assembly_error = abs(assembly_frac - 1)",
+        "required_action": "Use one representation and record expected-genome-size provenance; validate the 0.01 tolerance externally.",
+        "status": "provisional_redundant_representation"
+      },
+      "busco_complete": {
+        "finding": "The 1 percentage-point threshold resolves to at least two of 116 markers, but 9.4% of trajectories show only a transient >1-point gain.",
+        "required_action": "Store complete marker counts plus BUSCO version, lineage dataset, creation date, mode, and options; justify whether a transient two-marker gain is a material stopping outcome.",
+        "status": "provisional"
+      },
+      "qv_error_pair": {
+        "finding": "qv = -10 * log10(error_rate)",
+        "required_action": "Use one same-round, versioned mapping-error measurement; derive QV from it if needed, but never count both endpoints.",
+        "status": "invalid_redundant_and_provenance_ambiguous"
+      }
+    },
+    "release_gate": "blocked"
+  },
+  "replicate_audit": {
+    "interpretation": "Coverage trajectories are experimental conditions, not repeated measurements of the same assembly artifact.",
+    "rows": 635,
+    "technical_repeatability_estimable": false,
+    "technical_replicate_cells": 0,
+    "unique_sample_coverage_rounds": 635
+  },
+  "scientific_status": "development-only measurement-validity gate",
+  "split_audit": {
+    "dataset_sha256": "79daf80875e6befd27f77ad1816a63979e68e01316a0f46dc50f3797728a1c9a",
+    "development_rows": 635,
+    "development_samples": 32,
+    "development_trajectories": 127,
+    "held_out_samples_reserved": 9,
+    "held_out_samples_used": [],
+    "split_sha256": "bc03f15f7bc151060353c7c8de19b3cae6a656ba2556142fd845ac3a4e47c683"
+  }
+}
