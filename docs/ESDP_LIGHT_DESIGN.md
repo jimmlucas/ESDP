@@ -160,3 +160,9 @@ the light-core features, but also shows that the current endpoint is dominated
 by BUSCO, is sensitive to the materiality tolerances, and does not meet the
 safety gate. It therefore remains a research endpoint rather than a release
 contract.
+
+The measurement-validity gate in `ESDP_LIGHT_MEASUREMENT_VALIDITY.md` blocks
+further model selection until redundant outcomes are removed and BUSCO,
+same-round mapping error, assembly-size provenance, materiality, and
+repeatability are specified. Observation/history integration may proceed as a
+non-decision workflow capability; adaptive stopping may not.

@@ -129,6 +129,10 @@ The next gate is scientific rather than computational: freeze defensible
 metric tolerances and an asymmetric maximum acceptable premature-stop rate.
 Only then should calibration and nested grouped evaluation resume.
 
+The subsequent metric-resolution and provenance audit is documented in
+`ESDP_LIGHT_MEASUREMENT_VALIDITY.md`. Its versioned contract blocks retraining
+until the materiality definitions can be scientifically justified.
+
 ## Reproducibility
 
 Run from the repository root:
