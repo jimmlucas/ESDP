@@ -24,6 +24,7 @@
 - [Build Dataset](docs/BUILD_DATASET.md)
 - [Usage](docs/USAGE.md)
 - [Production CLI](docs/CLI.md)
+- [Native prospective instrumentation](docs/PROSPECTIVE_INSTRUMENTATION.md)
 - [ESDP-light scientific design](docs/ESDP_LIGHT_DESIGN.md)
 - [ESDP-light feasibility experiment](docs/ESDP_LIGHT_FEASIBILITY.md)
 - [ESDP-light direct binary stopping experiment](docs/ESDP_LIGHT_BINARY_FEASIBILITY.md)

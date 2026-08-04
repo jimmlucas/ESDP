@@ -219,6 +219,39 @@ esdp decide \
 The process should treat exit codes `3`–`5` conservatively and continue
 polishing unless the workflow policy explicitly chooses to fail.
 
+## Prospective instrumentation
+
+`esdp init` creates an immutable, non-decision project for collecting the
+prospective data needed by a future ESDP-light model. `esdp record-round`
+calculates a light observation and updates its causal history without invoking
+the legacy model:
+
+```bash
+esdp init \
+  --project-directory esdp-study \
+  --project-id ont-study \
+  --platform ont \
+  --chemistry R10.4.1 \
+  --basecaller Dorado \
+  --basecaller-version 0.9.0 \
+  --basecaller-model sup@v5.0.0 \
+  --assembler Flye \
+  --assembler-version 2.9.6 \
+  --polisher Racon \
+  --polisher-version 1.5.0
+
+esdp record-round \
+  --project-directory esdp-study \
+  --sample-id isolate-001 \
+  --coverage-effective 40 \
+  --round 1 \
+  --assembly isolate-001.r1.fasta
+```
+
+Both the project and every round record contain `decision_enabled: false`.
+See `PROSPECTIVE_INSTRUMENTATION.md` for the Python API, offline-QC schema,
+immutable layout, and provenance requirements.
+
 An ESDP-light collection process can remain independent of model inference:
 
 ```nextflow

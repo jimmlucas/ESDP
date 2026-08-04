@@ -44,6 +44,7 @@ ENV PATH=/home/esdp/.local/bin:$PATH
 # Copy application code
 COPY --chown=esdp:esdp esdp_decide.py .
 COPY --chown=esdp:esdp esdp_features.py .
+COPY --chown=esdp:esdp esdp_instrumentation.py .
 COPY --chown=esdp:esdp esdp_light.py .
 COPY --chown=esdp:esdp esdp_light_features.py .
 COPY --chown=esdp:esdp esdp_light_history.py .

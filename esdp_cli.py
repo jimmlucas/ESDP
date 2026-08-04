@@ -23,6 +23,13 @@ from pydantic import (
 )
 
 from esdp_decide import DEFAULT_MANIFEST_PATH, PolishingMetrics, decide
+from esdp_instrumentation import (
+    InstrumentationError,
+    LongReadTechnology,
+    ToolIdentity,
+    init_project,
+    record_round,
+)
 from esdp_light_history import LightHistoryError, build_light_feature_history
 from esdp_light_metrics import (
     LightMetricError,
@@ -369,6 +376,50 @@ def command_light_history(args: argparse.Namespace) -> dict[str, Any]:
     return history.model_dump(mode="json")
 
 
+def command_init(args: argparse.Namespace) -> dict[str, Any]:
+    """Initialize an ESDP prospective-instrumentation project."""
+    technology = LongReadTechnology(
+        platform=args.platform,
+        chemistry=args.chemistry,
+        basecaller=args.basecaller,
+        basecaller_version=args.basecaller_version,
+        basecaller_model=args.basecaller_model,
+    )
+    receipt = init_project(
+        args.project_directory,
+        project_id=args.project_id,
+        technology=technology,
+        assembler=ToolIdentity(
+            name=args.assembler,
+            version=args.assembler_version,
+            parameters=tuple(args.assembler_parameter),
+        ),
+        polisher=ToolIdentity(
+            name=args.polisher,
+            version=args.polisher_version,
+            parameters=tuple(args.polisher_parameter),
+        ),
+        max_rounds=args.max_rounds,
+    )
+    return receipt.model_dump(mode="json")
+
+
+def command_record_round(args: argparse.Namespace) -> dict[str, Any]:
+    """Record one immutable round and rebuild its cumulative light history."""
+    receipt = record_round(
+        args.project_directory,
+        sample_id=args.sample_id,
+        coverage_effective=args.coverage_effective,
+        round_number=args.round_number,
+        assembly_path=args.assembly,
+        samtools_stats_path=args.samtools_stats,
+        alignment_reference_path=args.alignment_reference,
+        offline_qc_path=args.offline_qc,
+        read_paths=tuple(args.reads),
+    )
+    return receipt.model_dump(mode="json")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="esdp",
@@ -385,6 +436,83 @@ def build_parser() -> argparse.ArgumentParser:
         help="report successful operations to stderr",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
+
+    init_parser = subparsers.add_parser(
+        "init",
+        help="initialize a prospective instrumentation project without decisions",
+    )
+    init_parser.add_argument(
+        "--project-directory",
+        required=True,
+        help="new or empty directory for immutable prospective records",
+    )
+    init_parser.add_argument("--project-id", required=True)
+    init_parser.add_argument(
+        "--platform",
+        required=True,
+        choices=("ont", "pacbio_hifi", "pacbio_clr", "other"),
+    )
+    init_parser.add_argument("--chemistry", required=True)
+    init_parser.add_argument("--basecaller")
+    init_parser.add_argument("--basecaller-version")
+    init_parser.add_argument("--basecaller-model")
+    init_parser.add_argument("--assembler", required=True)
+    init_parser.add_argument("--assembler-version", required=True)
+    init_parser.add_argument(
+        "--assembler-parameter",
+        action="append",
+        default=[],
+        help="repeat for each frozen assembler argument",
+    )
+    init_parser.add_argument("--polisher", required=True)
+    init_parser.add_argument("--polisher-version", required=True)
+    init_parser.add_argument(
+        "--polisher-parameter",
+        action="append",
+        default=[],
+        help="repeat for each frozen polisher argument",
+    )
+    init_parser.add_argument("--max-rounds", type=int, default=5)
+    init_parser.add_argument(
+        "--output",
+        "-o",
+        default="-",
+        help="initialization receipt path, or - for stdout",
+    )
+    init_parser.set_defaults(handler=command_init)
+
+    record_parser = subparsers.add_parser(
+        "record-round",
+        help="atomically record one round and update its causal history",
+    )
+    record_parser.add_argument("--project-directory", required=True)
+    record_parser.add_argument("--sample-id", required=True)
+    record_parser.add_argument(
+        "--coverage-effective", required=True, type=float
+    )
+    record_parser.add_argument(
+        "--round", dest="round_number", required=True, type=int
+    )
+    record_parser.add_argument("--assembly", required=True)
+    record_parser.add_argument("--samtools-stats")
+    record_parser.add_argument("--alignment-reference")
+    record_parser.add_argument(
+        "--offline-qc",
+        help="optional JSON matching the generated offline-QC schema",
+    )
+    record_parser.add_argument(
+        "--reads",
+        action="append",
+        default=[],
+        help="optional read artifact to hash; repeat for multiple files",
+    )
+    record_parser.add_argument(
+        "--output",
+        "-o",
+        default="-",
+        help="round commit receipt path, or - for stdout",
+    )
+    record_parser.set_defaults(handler=command_record_round)
 
     decide_parser = subparsers.add_parser(
         "decide",
@@ -548,7 +676,13 @@ def main(argv: list[str] | None = None) -> int:
         if args.verbose:
             print(f"esdp: {args.command} completed", file=sys.stderr)
         return EXIT_SUCCESS
-    except (InputContractError, LightHistoryError, LightMetricError) as error:
+    except (
+        InputContractError,
+        InstrumentationError,
+        LightHistoryError,
+        LightMetricError,
+        ValidationError,
+    ) as error:
         print(f"esdp: invalid input: {error}", file=sys.stderr)
         return EXIT_INVALID_INPUT
     except ManifestError as error:
