@@ -94,6 +94,9 @@ late stopping, calibration method, and release gates before fitting models.
 Only after those choices pass internal grouped validation should the single
 held-out evaluation and Nextflow module be considered.
 
+The resulting bounded endpoint study is documented in
+`ESDP_LIGHT_MATERIAL_ENDPOINT.md`.
+
 ## Reproducibility
 
 Run from the repository root:

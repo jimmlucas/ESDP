@@ -153,3 +153,10 @@ formulation, but the causal light candidates still fail the release gates. A
 historical leakage control also demonstrates that retrospective plateau
 features substantially inflate apparent performance. Direct binary stopping
 is retained as the research architecture, not as a deployable model.
+
+The subsequent future-benefit endpoint audit is reported in
+`ESDP_LIGHT_MATERIAL_ENDPOINT.md`. It finds stronger cross-sample signal for
+the light-core features, but also shows that the current endpoint is dominated
+by BUSCO, is sensitive to the materiality tolerances, and does not meet the
+safety gate. It therefore remains a research endpoint rather than a release
+contract.

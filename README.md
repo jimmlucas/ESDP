@@ -27,6 +27,7 @@
 - [ESDP-light scientific design](docs/ESDP_LIGHT_DESIGN.md)
 - [ESDP-light feasibility experiment](docs/ESDP_LIGHT_FEASIBILITY.md)
 - [ESDP-light direct binary stopping experiment](docs/ESDP_LIGHT_BINARY_FEASIBILITY.md)
+- [ESDP-light future-material-benefit endpoint study](docs/ESDP_LIGHT_MATERIAL_ENDPOINT.md)
 - [ESDP v2 trajectory contract](docs/TRAJECTORY_INPUT_SCHEMA.md)
 - [Model manifest and artifact verification](docs/MODEL_MANIFEST.md)
 - [Overview](#overview)
