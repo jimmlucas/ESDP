@@ -3,6 +3,7 @@
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from esdp_decide import (
@@ -27,6 +28,21 @@ def _load_offline_module():
 
 
 OFFLINE = _load_offline_module()
+
+
+def test_alignment_replaces_infinities_without_changing_metadata():
+    aligned = align_model_features(
+        pd.DataFrame(
+            {
+                "qv": [np.inf, -np.inf],
+                "label": ["first", "second"],
+            }
+        ),
+        ["qv", "label"],
+    )
+
+    assert aligned["qv"].isna().all()
+    assert aligned["label"].tolist() == ["first", "second"]
 
 
 def _history():

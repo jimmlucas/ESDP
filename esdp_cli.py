@@ -1,330 +1,465 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-esdp_cli.py - Command-Line Interface for ESDP (Early Stop Decision Polishing)
+"""Stable, workflow-oriented command-line interface for ESDP."""
 
-This CLI wrapper makes esdp_decide usable in Nextflow, Snakemake, and other
-workflow managers.
+from __future__ import annotations
 
-Usage:
-    # From JSON file
-    python esdp_cli.py --input metrics.json --output decision.json
-    
-    # From CSV file (batch mode)
-    python esdp_cli.py --input samples.csv --output decisions.csv
-    
-    # From stdin (Nextflow-friendly)
-    echo '{"coverage": 50, "qv": 35.2, ...}' | python esdp_cli.py --output decision.json
-    
-    # Conservative mode
-    python esdp_cli.py --input metrics.json --output decision.json --conservative
-"""
-
-import sys
-import json
 import argparse
+import json
+import math
+import os
+import sys
+import tempfile
+from dataclasses import asdict
 from pathlib import Path
-from typing import Dict, Any, List
-import pandas as pd
+from typing import Any, Literal
 
-from esdp_decide import decide, PolishingMetrics, Decision, decide_batch
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
-# ============================================================================
-# CLI Functions
-# ============================================================================
-
-def read_input(input_path: str = None) -> Dict[str, Any] | List[Dict[str, Any]]:
-    """
-    Read input from file or stdin.
-    
-    Args:
-        input_path: Path to input file (JSON or CSV). If None, read from stdin.
-    
-    Returns:
-        Dictionary or list of dictionaries with metrics
-    """
-    if input_path is None:
-        # Read from stdin
-        data = sys.stdin.read()
-        return json.loads(data)
-    
-    input_path_obj = Path(input_path)
-    
-    if not input_path_obj.exists():
-        raise FileNotFoundError(f"Input file not found: {input_path}")
-    
-    # Determine format from extension
-    if input_path_obj.suffix.lower() == '.json':
-        with open(input_path_obj, 'r') as f:
-            return json.load(f)
-    
-    elif input_path_obj.suffix.lower() == '.csv':
-        df = pd.read_csv(input_path_obj)
-        return df.to_dict('records')
-    
-    else:
-        raise ValueError(f"Unsupported file format: {input_path_obj.suffix}")
+from esdp_decide import DEFAULT_MANIFEST_PATH, PolishingMetrics, decide
+from esdp_manifest import (
+    ManifestError,
+    load_verified_model,
+    verify_manifest_files,
+)
+from esdp_trajectory import (
+    DEFAULT_REQUIRED_METRICS,
+    IncompleteHistoryPolicy,
+    PolishingTrajectory,
+)
 
 
-def write_output(
-    decisions: Decision | List[Decision],
-    output_path: str = None,
-    format: str = 'json'
-):
-    """
-    Write output to file or stdout.
-    
-    Args:
-        decisions: Single Decision or list of Decisions
-        output_path: Path to output file. If None, write to stdout.
-        format: Output format ('json' or 'csv')
-    """
-    # Convert to list if single decision
-    if isinstance(decisions, Decision):
-        decisions = [decisions]
-    
-    # Convert to serializable format
-    decisions_data = [d.to_json_serializable() for d in decisions]
-    
-    if output_path is None:
-        # Write to stdout
-        if format == 'json':
-            if len(decisions_data) == 1:
-                print(json.dumps(decisions_data[0], indent=2))
-            else:
-                print(json.dumps(decisions_data, indent=2))
-        else:
-            df = pd.DataFrame(decisions_data)
-            print(df.to_csv(index=False))
-    else:
-        output_path_obj = Path(output_path)
-        
-        if format == 'json' or output_path_obj.suffix.lower() == '.json':
-            with open(output_path_obj, 'w') as f:
-                if len(decisions_data) == 1:
-                    json.dump(decisions_data[0], f, indent=2)
-                else:
-                    json.dump(decisions_data, f, indent=2)
-        
-        elif format == 'csv' or output_path_obj.suffix.lower() == '.csv':
-            df = pd.DataFrame(decisions_data)
-            df.to_csv(output_path_obj, index=False)
-        
-        else:
-            raise ValueError(f"Unsupported output format: {output_path_obj.suffix}")
+ESDP_CLI_VERSION = "2.0.0.dev0"
+DECISION_SCHEMA_VERSION = "1.0.0"
+
+EXIT_SUCCESS = 0
+EXIT_USAGE = 2
+EXIT_INVALID_INPUT = 3
+EXIT_MODEL_ERROR = 4
+EXIT_OUTPUT_ERROR = 5
 
 
-def process_single(
-    metrics_dict: Dict[str, Any],
-    model_path: str,
-    feature_names_path: str,
-    force_conservative: bool,
-    model_version: str
-) -> Decision:
-    """Process a single sample."""
-    metrics = PolishingMetrics(**metrics_dict)
-    
-    decision = decide(
-        metrics=metrics,
-        model_path=model_path,
-        feature_names_path=feature_names_path,
-        force_conservative=force_conservative,
-        model_version=model_version
-    )
-    
-    return decision
+class InputContractError(ValueError):
+    """Raised when CLI input cannot satisfy its declared contract."""
 
 
-def process_batch(
-    metrics_list: List[Dict[str, Any]],
-    model_path: str,
-    feature_names_path: str,
-    force_conservative: bool,
-    model_version: str
-) -> List[Decision]:
-    """Process multiple samples."""
-    metrics_objects = [PolishingMetrics(**m) for m in metrics_list]
-    
-    decisions = decide_batch(
-        metrics_list=metrics_objects,
-        model_path=model_path,
-        feature_names_path=feature_names_path,
-        force_conservative=force_conservative,
-        model_version=model_version
-    )
-    
-    return decisions
+class OutputWriteError(OSError):
+    """Raised when a deterministic output cannot be written."""
 
 
-# ============================================================================
-# Main CLI
-# ============================================================================
+class LegacyMetricsInput(BaseModel):
+    """Strict input contract for the bundled legacy single-round model."""
 
-def main():
-    """Main CLI entry point."""
-    parser = argparse.ArgumentParser(
-        description="ESDP CLI - Early Stop Decision Polishing",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  # Single sample from JSON
-  python esdp_cli.py --input sample.json --output decision.json
-  
-  # Batch processing from CSV
-  python esdp_cli.py --input samples.csv --output decisions.csv
-  
-  # From stdin (Nextflow-friendly)
-  echo '{"coverage": 50, "qv": 35.2, "busco_complete": 95.5, "n50": 2500000}' | \\
-    python esdp_cli.py --output decision.json
-  
-  # Conservative mode
-  python esdp_cli.py --input sample.json --output decision.json --conservative
-  
-  # Custom model path
-  python esdp_cli.py --input sample.json --output decision.json \\
-    --model-path /path/to/model.pkl
-        """
+    model_config = ConfigDict(
+        extra="forbid",
+        allow_inf_nan=False,
+        frozen=True,
+        strict=True,
     )
-    
-    # Input/Output
-    parser.add_argument(
-        '--input', '-i',
-        type=str,
-        default=None,
-        help='Input file (JSON or CSV). If not provided, reads from stdin.'
-    )
-    
-    parser.add_argument(
-        '--output', '-o',
-        type=str,
-        default=None,
-        help='Output file (JSON or CSV). If not provided, writes to stdout.'
-    )
-    
-    parser.add_argument(
-        '--format', '-f',
-        type=str,
-        choices=['json', 'csv'],
-        default='json',
-        help='Output format (default: json)'
-    )
-    
-    # Model configuration
-    parser.add_argument(
-        '--model-path', '-m',
-        type=str,
-        default='models/best_model_pipeline.pkl',
-        help='Path to trained model pipeline (default: models/best_model_pipeline.pkl)'
-    )
-    
-    parser.add_argument(
-        '--feature-names-path',
-        type=str,
-        default='models/feature_names.txt',
-        help='Path to feature names file (default: models/feature_names.txt)'
-    )
-    
-    parser.add_argument(
-        '--model-version',
-        type=str,
-        default='1.0.0',
-        help='Model version string (default: 1.0.0)'
-    )
-    
-    # Decision options
-    parser.add_argument(
-        '--conservative', '-c',
-        action='store_true',
-        help='Force conservative recommendations (prefer more rounds)'
-    )
-    
-    parser.add_argument(
-        '--qv-threshold',
-        type=float,
-        default=35.0,
-        help='QV threshold for excellent quality (default: 35.0)'
-    )
-    
-    parser.add_argument(
-        '--busco-threshold',
-        type=float,
-        default=95.0,
-        help='BUSCO threshold for excellent quality (default: 95.0)'
-    )
-    
-    # Verbosity
-    parser.add_argument(
-        '--verbose', '-v',
-        action='store_true',
-        help='Verbose output (print to stderr)'
-    )
-    
-    args = parser.parse_args()
-    
+
+    sample_id: str = Field(min_length=1)
+    genus: str | None = None
+    round: int = Field(ge=1, le=5)
+
+    coverage: float | None = Field(default=None, ge=0)
+    coverage_effective: float | None = Field(default=None, ge=0)
+    n50: float | None = Field(default=None, ge=1)
+    qv: float | None = Field(default=None, ge=0)
+    error_rate: float | None = Field(default=None, ge=0, le=1)
+    busco_complete: float | None = Field(default=None, ge=0, le=100)
+    num_contigs: int | None = Field(default=None, ge=1)
+    total_length: int | None = Field(default=None, ge=1)
+
+    raw_total_bp: float | None = Field(default=None, ge=0)
+    raw_read_n50: float | None = Field(default=None, ge=0)
+    raw_mean_read_len: float | None = Field(default=None, ge=0)
+
+    ai_num_contigs: int | None = Field(default=None, ge=0)
+    ai_total_bp: int | None = Field(default=None, ge=0)
+    ai_mean_cov: float | None = Field(default=None, ge=0)
+    ai_median_cov: float | None = Field(default=None, ge=0)
+    ai_cov_cv: float | None = Field(default=None, ge=0)
+    ai_circular_n: int | None = Field(default=None, ge=0)
+    ai_circular_bp_frac: float | None = Field(default=None, ge=0, le=1)
+    ai_repeat_bp_frac: float | None = Field(default=None, ge=0, le=1)
+    ai_longest_len: int | None = Field(default=None, ge=0)
+    ai_longest_cov: float | None = Field(default=None, ge=0)
+
+    polish_mean_contig_cov: float | None = Field(default=None, ge=0)
+    align_err_consensus: float | None = Field(default=None, ge=0, le=1)
+    align_err_polishing: float | None = Field(default=None, ge=0, le=1)
+
+    ovlp_div_initial: float | None = Field(default=None, ge=0)
+    ovlp_median_div_first: float | None = Field(default=None, ge=0)
+    mean_edge_coverage: float | None = Field(default=None, ge=0)
+
+    delta_qv: float | None = None
+    delta_busco_complete: float | None = None
+    delta_error_rate: float | None = None
+    qv_improvement_rate: float | None = None
+    assembly_error: float | None = Field(default=None, ge=0)
+
+    @field_validator("sample_id", mode="before")
+    @classmethod
+    def normalize_sample_id(cls, value):
+        if isinstance(value, str):
+            return value.strip()
+        return value
+
+    @model_validator(mode="after")
+    def require_core_decision_metrics(self):
+        missing = [
+            name
+            for name in DEFAULT_REQUIRED_METRICS
+            if getattr(self, name) is None
+        ]
+        if missing:
+            raise ValueError(
+                f"missing required decision metrics: {missing}"
+            )
+        return self
+
+
+def _canonical_json_value(value: Any) -> Any:
+    """Normalize floating-point noise before deterministic serialization."""
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise OutputWriteError("output contains a non-finite number")
+        return round(value, 10)
+    if isinstance(value, dict):
+        return {
+            key: _canonical_json_value(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [_canonical_json_value(item) for item in value]
+    return value
+
+
+def _json_text(payload: Any) -> str:
     try:
-        # Read input
-        if args.verbose:
-            print(f"Reading input from: {args.input or 'stdin'}", file=sys.stderr)
-        
-        input_data = read_input(args.input)
-        
-        # Determine if batch or single
-        is_batch = isinstance(input_data, list)
-        
-        if args.verbose:
-            if is_batch:
-                print(f"Processing {len(input_data)} samples...", file=sys.stderr)
-            else:
-                print("Processing single sample...", file=sys.stderr)
-        
-        # Process
-        if is_batch:
-            decisions = process_batch(
-                metrics_list=input_data,
-                model_path=args.model_path,
-                feature_names_path=args.feature_names_path,
-                force_conservative=args.conservative,
-                model_version=args.model_version
+        return json.dumps(
+            _canonical_json_value(payload),
+            allow_nan=False,
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        ) + "\n"
+    except (TypeError, ValueError) as error:
+        raise OutputWriteError(f"output is not valid JSON: {error}") from error
+
+
+def read_json(path_text: str) -> Any:
+    """Read one JSON document from a file or stdin."""
+    try:
+        if path_text == "-":
+            return json.load(sys.stdin)
+        with Path(path_text).expanduser().open(encoding="utf-8") as input_file:
+            return json.load(input_file)
+    except json.JSONDecodeError as error:
+        raise InputContractError(
+            f"invalid JSON at line {error.lineno}, column {error.colno}: "
+            f"{error.msg}"
+        ) from error
+    except OSError as error:
+        raise InputContractError(f"unable to read input {path_text}: {error}") from error
+
+
+def write_json(payload: Any, path_text: str) -> None:
+    """Write deterministic JSON, atomically when targeting a file."""
+    output_text = _json_text(payload)
+    if path_text == "-":
+        sys.stdout.write(output_text)
+        return
+
+    output_path = Path(path_text).expanduser().resolve()
+    temporary_path: Path | None = None
+    try:
+        if not output_path.parent.is_dir():
+            raise OSError(
+                f"parent directory does not exist: {output_path.parent}"
             )
-        else:
-            decision = process_single(
-                metrics_dict=input_data,
-                model_path=args.model_path,
-                feature_names_path=args.feature_names_path,
-                force_conservative=args.conservative,
-                model_version=args.model_version
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=output_path.parent,
+            prefix=f".{output_path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as output_file:
+            output_file.write(output_text)
+            output_file.flush()
+            os.fsync(output_file.fileno())
+            temporary_path = Path(output_file.name)
+        os.replace(temporary_path, output_path)
+    except OSError as error:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+        raise OutputWriteError(
+            f"unable to write output {output_path}: {error}"
+        ) from error
+
+
+def _validate_metrics(payload: Any) -> LegacyMetricsInput:
+    if not isinstance(payload, dict):
+        raise InputContractError("metrics input must be one JSON object")
+    try:
+        return LegacyMetricsInput.model_validate(payload)
+    except ValidationError as error:
+        raise InputContractError(str(error)) from error
+
+
+def _validate_trajectory(payload: Any) -> PolishingTrajectory:
+    if not isinstance(payload, dict):
+        raise InputContractError("trajectory input must be one JSON object")
+    try:
+        return PolishingTrajectory.model_validate(payload)
+    except ValidationError as error:
+        raise InputContractError(str(error)) from error
+
+
+def _decision_payload(decision, current_round: int) -> dict[str, Any]:
+    payload = asdict(decision)
+    selected_final_round = max(current_round, decision.recommended_rounds)
+    can_continue = current_round < selected_final_round and current_round < 5
+    payload.update(
+        {
+            "decision_schema_version": DECISION_SCHEMA_VERSION,
+            "workflow_action": "CONTINUE" if can_continue else "STOP",
+            "current_round": current_round,
+            "next_round": current_round + 1 if can_continue else None,
+            "selected_final_round": selected_final_round,
+        }
+    )
+    return payload
+
+
+def command_decide(args: argparse.Namespace) -> dict[str, Any]:
+    metrics_input = _validate_metrics(read_json(args.input))
+    metrics = PolishingMetrics(**metrics_input.model_dump())
+    decision = decide(
+        metrics,
+        model_path=args.model,
+        manifest_path=args.manifest,
+        confidence_threshold=args.confidence_threshold,
+        force_conservative=args.force_conservative,
+    )
+    return _decision_payload(decision, metrics_input.round)
+
+
+def _infer_validation_kind(payload: Any) -> Literal["metrics", "trajectory"]:
+    if not isinstance(payload, dict):
+        raise InputContractError("validation input must be one JSON object")
+    if payload.get("schema_version") == "2.0.0" or "rounds" in payload:
+        return "trajectory"
+    return "metrics"
+
+
+def command_validate(args: argparse.Namespace) -> dict[str, Any]:
+    payload = read_json(args.input)
+    kind = args.kind if args.kind != "auto" else _infer_validation_kind(payload)
+    if kind == "trajectory":
+        trajectory = _validate_trajectory(payload)
+        missing_metrics = trajectory.missing_metrics()
+        if (
+            missing_metrics
+            and trajectory.incomplete_history_policy
+            is IncompleteHistoryPolicy.ERROR
+        ):
+            raise InputContractError(
+                f"incomplete trajectory metrics by round: {missing_metrics}"
             )
-            decisions = decision
-        
-        # Write output
+        return {
+            "complete": not missing_metrics,
+            "current_round": trajectory.current_round,
+            "kind": "trajectory",
+            "missing_metrics": missing_metrics,
+            "sample_id": trajectory.sample_id,
+            "schema_version": trajectory.schema_version,
+            "valid": True,
+        }
+
+    metrics = _validate_metrics(payload)
+    return {
+        "complete": True,
+        "current_round": metrics.round,
+        "kind": "metrics",
+        "missing_metrics": {},
+        "sample_id": metrics.sample_id,
+        "schema_version": DECISION_SCHEMA_VERSION,
+        "valid": True,
+    }
+
+
+def command_model_info(args: argparse.Namespace) -> dict[str, Any]:
+    manifest_path = (
+        Path(args.manifest).expanduser().resolve()
+        if args.manifest is not None
+        else DEFAULT_MANIFEST_PATH
+    )
+    verified = load_verified_model(manifest_path)
+    verified_files = verify_manifest_files(
+        verified.manifest,
+        manifest_path,
+        include_training_data=args.verify_training_data,
+    )
+    return {
+        "artifact_verified": True,
+        "feature_names_verified": True,
+        "manifest": verified.manifest.model_dump(mode="json"),
+        "training_data_verified": args.verify_training_data,
+        "verified_file_names": {
+            key: path.name
+            for key, path in verified_files.items()
+            if key != "training_data" or args.verify_training_data
+        },
+    }
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="esdp",
+        description="Workflow-oriented ESDP decision interface",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {ESDP_CLI_VERSION}",
+    )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="report successful operations to stderr",
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    decide_parser = subparsers.add_parser(
+        "decide",
+        help="make one decision with the bundled legacy model",
+    )
+    decide_parser.add_argument(
+        "--input",
+        "-i",
+        required=True,
+        help="metrics JSON path, or - for stdin",
+    )
+    decide_parser.add_argument(
+        "--output",
+        "-o",
+        default="-",
+        help="decision JSON path, or - for stdout",
+    )
+    decide_parser.add_argument("--model", help="optional custom joblib model")
+    decide_parser.add_argument("--manifest", help="optional model manifest")
+    decide_parser.add_argument(
+        "--confidence-threshold",
+        type=float,
+        default=0.5,
+        choices=None,
+        help="conservative escalation threshold in [0,1] (default: 0.5)",
+    )
+    decide_parser.add_argument(
+        "--force-conservative",
+        action="store_true",
+        help="force the maximum-round recommendation",
+    )
+    decide_parser.set_defaults(handler=command_decide)
+
+    validate_parser = subparsers.add_parser(
+        "validate",
+        help="validate metrics or a v2 trajectory JSON document",
+    )
+    validate_parser.add_argument(
+        "--input",
+        "-i",
+        required=True,
+        help="input JSON path, or - for stdin",
+    )
+    validate_parser.add_argument(
+        "--output",
+        "-o",
+        default="-",
+        help="validation receipt path, or - for stdout",
+    )
+    validate_parser.add_argument(
+        "--kind",
+        choices=("auto", "metrics", "trajectory"),
+        default="auto",
+    )
+    validate_parser.set_defaults(handler=command_validate)
+
+    info_parser = subparsers.add_parser(
+        "model-info",
+        help="verify and report the model manifest",
+    )
+    info_parser.add_argument("--manifest", help="optional model manifest")
+    info_parser.add_argument(
+        "--output",
+        "-o",
+        default="-",
+        help="model information path, or - for stdout",
+    )
+    info_parser.add_argument(
+        "--verify-training-data",
+        action="store_true",
+        help="also verify the recorded training dataset checksum",
+    )
+    info_parser.set_defaults(handler=command_model_info)
+    return parser
+
+
+def _validate_cli_options(args: argparse.Namespace) -> None:
+    threshold = getattr(args, "confidence_threshold", None)
+    if threshold is not None and not 0 <= threshold <= 1:
+        raise InputContractError(
+            "confidence-threshold must be between 0 and 1"
+        )
+    if (
+        getattr(args, "model", None) is not None
+        and getattr(args, "manifest", None) is None
+    ):
+        print(
+            "esdp: warning: custom model is unverified without --manifest",
+            file=sys.stderr,
+        )
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    try:
+        _validate_cli_options(args)
+        result = args.handler(args)
+        write_json(result, args.output)
         if args.verbose:
-            print(f"Writing output to: {args.output or 'stdout'}", file=sys.stderr)
-        
-        write_output(decisions, args.output, args.format)
-        
-        if args.verbose:
-            if is_batch:
-                print(f"Successfully processed {len(input_data)} samples", file=sys.stderr)
-            else:
-                print("Successfully processed sample", file=sys.stderr)
-        
-        sys.exit(0)
-        
-    except FileNotFoundError as e:
-        print(f"ERROR: {e}", file=sys.stderr)
-        sys.exit(1)
-    
-    except ValueError as e:
-        print(f"ERROR: Invalid input - {e}", file=sys.stderr)
-        sys.exit(1)
-    
-    except Exception as e:
-        print(f"ERROR: Unexpected error - {e}", file=sys.stderr)
+            print(f"esdp: {args.command} completed", file=sys.stderr)
+        return EXIT_SUCCESS
+    except InputContractError as error:
+        print(f"esdp: invalid input: {error}", file=sys.stderr)
+        return EXIT_INVALID_INPUT
+    except ManifestError as error:
+        print(f"esdp: model error: {error}", file=sys.stderr)
+        return EXIT_MODEL_ERROR
+    except OutputWriteError as error:
+        print(f"esdp: output error: {error}", file=sys.stderr)
+        return EXIT_OUTPUT_ERROR
+    except Exception as error:
+        print(
+            f"esdp: inference error: {type(error).__name__}: {error}",
+            file=sys.stderr,
+        )
         if args.verbose:
             import traceback
+
             traceback.print_exc(file=sys.stderr)
-        sys.exit(1)
+        return EXIT_MODEL_ERROR
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
