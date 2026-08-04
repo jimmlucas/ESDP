@@ -6,7 +6,7 @@ import gzip
 from pathlib import Path
 from typing import Literal, TextIO
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from esdp_manifest import sha256_file
 
@@ -71,6 +71,13 @@ class LightRoundObservation(BaseModel):
         default=None,
         pattern=r"^[0-9a-f]{64}$",
     )
+
+    @field_validator("sample_id", mode="before")
+    @classmethod
+    def normalize_sample_id(cls, value):
+        if isinstance(value, str):
+            return value.strip()
+        return value
 
     @model_validator(mode="after")
     def validate_alignment_provenance(self):

@@ -79,6 +79,13 @@ Its deterministic, atomically written JSON is a model-independent workflow
 artifact: producing it does not imply that an ESDP-light classifier has been
 trained, selected, calibrated, or released.
 
+`esdp light-history` aggregates those observations under a second versioned
+schema. It requires exactly one sample and coverage trajectory with contiguous
+R1...Rn inputs, preserves each assembly identity, converts causal
+not-yet-available values to JSON `null`, and excludes provisional alignment
+metrics. A serialized history can be read back and revalidated against the
+same schema.
+
 ## Explicit exclusions
 
 The light model must exclude:

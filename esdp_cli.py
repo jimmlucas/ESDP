@@ -23,7 +23,12 @@ from pydantic import (
 )
 
 from esdp_decide import DEFAULT_MANIFEST_PATH, PolishingMetrics, decide
-from esdp_light_metrics import LightMetricError, collect_light_round_observation
+from esdp_light_history import LightHistoryError, build_light_feature_history
+from esdp_light_metrics import (
+    LightMetricError,
+    LightRoundObservation,
+    collect_light_round_observation,
+)
 from esdp_manifest import (
     ManifestError,
     load_verified_model,
@@ -335,6 +340,35 @@ def command_light_observe(args: argparse.Namespace) -> dict[str, Any]:
     return observation.model_dump(mode="json")
 
 
+def _read_light_observation(path_text: str) -> LightRoundObservation:
+    payload = read_json(path_text)
+    if not isinstance(payload, dict):
+        raise InputContractError(
+            f"light observation {path_text} must be one JSON object"
+        )
+    try:
+        return LightRoundObservation.model_validate(payload)
+    except ValidationError as error:
+        raise InputContractError(
+            f"invalid light observation {path_text}: {error}"
+        ) from error
+
+
+def command_light_history(args: argparse.Namespace) -> dict[str, Any]:
+    """Aggregate observed rounds into prospective ESDP-light features."""
+    if args.observation.count("-") > 1:
+        raise InputContractError("standard input can provide only one observation")
+    observations = [
+        _read_light_observation(path_text)
+        for path_text in args.observation
+    ]
+    history = build_light_feature_history(
+        observations,
+        coverage_effective=args.coverage_effective,
+    )
+    return history.model_dump(mode="json")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="esdp",
@@ -461,6 +495,30 @@ def build_parser() -> argparse.ArgumentParser:
         help="observation JSON path, or - for stdout",
     )
     light_observe_parser.set_defaults(handler=command_light_observe)
+
+    light_history_parser = subparsers.add_parser(
+        "light-history",
+        help="aggregate light observations into prospective features",
+    )
+    light_history_parser.add_argument(
+        "--observation",
+        action="append",
+        required=True,
+        help="round observation JSON; repeat once per observed round",
+    )
+    light_history_parser.add_argument(
+        "--coverage-effective",
+        required=True,
+        type=float,
+        help="positive effective coverage identifying this trajectory",
+    )
+    light_history_parser.add_argument(
+        "--output",
+        "-o",
+        default="-",
+        help="feature history JSON path, or - for stdout",
+    )
+    light_history_parser.set_defaults(handler=command_light_history)
     return parser
 
 
@@ -490,7 +548,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.verbose:
             print(f"esdp: {args.command} completed", file=sys.stderr)
         return EXIT_SUCCESS
-    except (InputContractError, LightMetricError) as error:
+    except (InputContractError, LightHistoryError, LightMetricError) as error:
         print(f"esdp: invalid input: {error}", file=sys.stderr)
         return EXIT_INVALID_INPUT
     except ManifestError as error:

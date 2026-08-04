@@ -54,6 +54,7 @@ py-modules = [
   "esdp_features",
   "esdp_light",
   "esdp_light_features",
+  "esdp_light_history",
   "esdp_light_metrics",
   "esdp_manifest",
   "esdp_trajectory",

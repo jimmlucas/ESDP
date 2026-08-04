@@ -46,6 +46,7 @@ COPY --chown=esdp:esdp esdp_decide.py .
 COPY --chown=esdp:esdp esdp_features.py .
 COPY --chown=esdp:esdp esdp_light.py .
 COPY --chown=esdp:esdp esdp_light_features.py .
+COPY --chown=esdp:esdp esdp_light_history.py .
 COPY --chown=esdp:esdp esdp_light_metrics.py .
 COPY --chown=esdp:esdp esdp_manifest.py .
 COPY --chown=esdp:esdp esdp_trajectory.py .
