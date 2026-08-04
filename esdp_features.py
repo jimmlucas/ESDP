@@ -15,6 +15,16 @@ import pandas as pd
 from sklearn.preprocessing import PolynomialFeatures
 
 
+def _replace_infinite_with_nan(frame: pd.DataFrame) -> pd.DataFrame:
+    """Replace infinities without pandas' deprecated silent downcasting."""
+    result = frame.copy()
+    numeric_columns = result.select_dtypes(include=[np.number]).columns
+    if len(numeric_columns):
+        numeric = result.loc[:, numeric_columns]
+        result.loc[:, numeric_columns] = numeric.mask(np.isinf(numeric))
+    return result
+
+
 @dataclass(frozen=True)
 class FeatureBuilderConfig:
     """Configuration that affects canonical feature definitions."""
@@ -277,7 +287,7 @@ class FeatureBuilder:
 
     @staticmethod
     def validate(df: pd.DataFrame) -> pd.DataFrame:
-        return df.replace([np.inf, -np.inf], np.nan)
+        return _replace_infinite_with_nan(df)
 
     def transform(self, history: pd.DataFrame) -> pd.DataFrame:
         """Build all canonical features for one or more trajectories."""
@@ -321,4 +331,4 @@ def align_model_features(
 
     aligned = frame.reindex(columns=list(feature_names))
     aligned = aligned.where(pd.notna(aligned), np.nan)
-    return aligned.replace([np.inf, -np.inf], np.nan)
+    return _replace_infinite_with_nan(aligned)

@@ -67,10 +67,12 @@ DVT_timeline.txt
 eda_summary.txt
 
 ########################################
-# Models: ignore everything except the production model artifact
+# Models: include only the verified production model bundle
 ########################################
 models/*
 !models/best_model_pipeline.pkl
+!models/feature_names.txt
+!models/model_manifest.v1.json
 
 ########################################
 # Docs (optional - keep out of image)

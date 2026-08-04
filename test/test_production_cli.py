@@ -252,6 +252,7 @@ def test_pyproject_separates_core_api_training_and_dev_dependencies():
 
 def test_docker_runtime_exposes_cli_without_api_banner():
     dockerfile = (REPOSITORY / "Dockerfile").read_text(encoding="utf-8")
+    dockerignore = (REPOSITORY / ".dockerignore").read_text(encoding="utf-8")
     entrypoint = (REPOSITORY / "docker-entrypoint.sh").read_text(
         encoding="utf-8"
     )
@@ -259,3 +260,5 @@ def test_docker_runtime_exposes_cli_without_api_banner():
     assert "COPY --chown=esdp:esdp esdp_cli.py ." in dockerfile
     assert "ln -s /app/esdp_cli.py /usr/local/bin/esdp" in dockerfile
     assert '[ "${1:-}" = "esdp" ]' in entrypoint
+    assert "!models/feature_names.txt" in dockerignore
+    assert "!models/model_manifest.v1.json" in dockerignore
