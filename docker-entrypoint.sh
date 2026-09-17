@@ -1,62 +1,51 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail
 
 echo "=================================================="
-echo "ESDP - Early Stop Decision Polishing"
-echo "Starting API Service..."
+echo "ESDP v2 - Sequential Adaptive Polishing Controller"
+echo "Starting API service"
 echo "=================================================="
 
-MODEL_PATH="${MODEL_PATH:-/app/models/best_model_pipeline.pkl}"
+MODEL_PATH="${MODEL_PATH:-/app/outputs/frozen_sequential_model_v2/esdp_sequential_rf_v2.joblib}"
 PORT="${PORT:-8000}"
 WORKERS="${WORKERS:-1}"
-LOG_LEVEL="${LOG_LEVEL:-INFO}"
+LOG_LEVEL="${LOG_LEVEL:-info}"
 
-# Ensure logs directory exists (as non-root user)
-mkdir -p /app/logs
-
-# Check if model file exists
 if [ ! -f "$MODEL_PATH" ]; then
-  echo "ERROR: Model file not found at: $MODEL_PATH"
-  echo "Expected: /app/models/best_model_pipeline.pkl"
-  echo "If running with docker-compose, ensure ./models is mounted and contains the file."
-  exit 1
+    echo "ERROR: Frozen ESDP v2 model not found:"
+    echo "  $MODEL_PATH"
+    exit 1
 fi
 
 echo "Model found: $MODEL_PATH"
-
-# Check optional feature names
-FEATURE_NAMES_PATH="$(dirname "$MODEL_PATH")/feature_names.txt"
-if [ ! -f "$FEATURE_NAMES_PATH" ]; then
-  echo "WARNING: Feature names file not found at $FEATURE_NAMES_PATH"
-  echo "Model may still work if feature names are embedded in the pipeline."
-fi
+echo "Python: $(python --version)"
+echo "Port: $PORT"
+echo "Workers: $WORKERS"
+echo "Log level: $LOG_LEVEL"
 
 echo ""
-echo "Environment Configuration:"
-echo "  - Python: $(python --version)"
-echo "  - Model Path: $MODEL_PATH"
-echo "  - Port: $PORT"
-echo "  - Workers: $WORKERS"
-echo "  - Log Level: $LOG_LEVEL"
-echo ""
+echo "Running ESDP v2 startup validation..."
 
-# Startup import check
-echo "Running startup import check..."
 python - <<'PY'
-import sys
-try:
-    import esdp_decide
-    import api_service
-    print("OK: Modules imported successfully")
-except Exception as e:
-    print(f"ERROR: Module import failed: {e}")
-    sys.exit(1)
+from esdp_decide import model_info
+
+info = model_info()
+
+assert info["model_version"] == "esdp-sequential-rf-v2"
+assert info["decision_threshold"] == 0.45
+assert info["feature_count"] == 10
+
+print("OK: frozen ESDP v2 model validated")
+print("Model SHA256:", info["model_sha256"])
+print("Feature schema SHA256:", info["feature_schema_sha256"])
 PY
 
 echo ""
-echo "Startup checks passed"
-echo "Starting server..."
+echo "Starting FastAPI..."
 echo "=================================================="
-echo ""
 
-exec "$@"
+exec uvicorn api_service:app \
+    --host 0.0.0.0 \
+    --port "$PORT" \
+    --workers "$WORKERS" \
+    --log-level "$LOG_LEVEL"

@@ -1,16 +1,15 @@
 {
-  "sample_id": null,
-  "recommended_rounds": 1,
-  "confidence": 0.5180014455857829,
-  "reasoning": "ML model predicts Late (R5). R1 quality excellent (QV=35.2, BUSCO=95.5%). Recommend 1 rounds.",
-  "model_version": "1.0.0",
-  "warnings": [
-    "R1 quality excellent: early stop recommended"
-  ],
-  "predicted_class": 3,
-  "class_probabilities": {
-    "1": 0.1233724382640963,
-    "2": 0.35862610869954026,
-    "3": 0.5180014455857829
-  }
+  "sample_id": "example_sample",
+  "round": 1,
+  "p_continue": 0.5939402938271254,
+  "threshold": 0.45,
+  "decision": "CONTINUE",
+  "next_action": "RACON_R2",
+  "model_version": "esdp-sequential-rf-v2",
+  "model_sha256": "9f9f08428242e98381546b9c79cd3d9b013c412b3edcbfe01ca84bb6f4c10dcf",
+  "feature_schema_sha256": "2f50cc9c6169c325da21e189b309623d872cbfdf4a025588c786c6e9f4576ced",
+  "missing_features": [
+    "delta_n50_last",
+    "n50_from_R1"
+  ]
 }
