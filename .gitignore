@@ -23,7 +23,18 @@ logs/
 decision.json
 test.json
 
-outputs/plots/*.tiff
-outputs/plots/*.tif
-outputs/plots/*.tiff
-outputs/plots/*.tif
+# Outputs
+outputs/*
+!outputs/frozen_sequential_model_v2/
+outputs/frozen_sequential_model_v2/*
+!outputs/frozen_sequential_model_v2/esdp_sequential_rf_v2.joblib
+!outputs/frozen_sequential_model_v2/esdp_sequential_rf_v2.metadata.json
+!outputs/frozen_sequential_model_v2/SHA256.txt
+
+
+# Legacy models
+models/.venv/
+.nfs*
+
+# Local Python virtual environment
+/.venv/

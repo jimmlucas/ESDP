@@ -1,362 +1,426 @@
 #!/usr/bin/env python3
 """
-api_service.py - FastAPI service for ESDP polishing decisions
+api_service.py
 
-Production-grade REST API with:
-- Structured logging (structlog)
-- Metrics tracking
-- Health checks
-- Pydantic validation
-- Error handling
-- Transparent rule overrides
+FastAPI service for the frozen ESDP sequential controller.
+
+The API is a thin transport layer around esdp_decide.py.
+
+Operational decision rule
+-------------------------
+    p_continue >= 0.45  -> CONTINUE
+    p_continue <  0.45  -> STOP
+
+Legal decision rounds
+---------------------
+    R1-R4 only.
+
+R5 is the maximum Racon round and proceeds directly to mandatory Medaka;
+there is no ESDP decision after R5.
+
+Operational predictors
+----------------------
+Exactly 10 frozen predictors are accepted:
+
+    round
+    coverage_est
+    expected_genome_size
+    raw_read_n50
+    ai_cov_cv
+    current_n50
+    current_num_contigs
+    current_assembly_frac
+    delta_n50_last
+    n50_from_R1
+
+sample_id is metadata only.
+
+BUSCO, QV, genus, reference-derived metrics, future-round information,
+and post-hoc rule overrides are not part of operational inference.
 """
 
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
-from typing import Optional, Dict, List, Any
-import structlog
-import logging
-import time
-from datetime import datetime
-import sys
+from __future__ import annotations
 
-# Import decision logic
-from esdp_decide import decide, PolishingMetrics, Decision
+from datetime import datetime, timezone
+from typing import List, Optional
 
-# ============================================================
-# Structured Logging Setup
-# ============================================================
-structlog.configure(
-    processors=[
-        structlog.processors.TimeStamper(fmt="iso"),
-        structlog.processors.add_log_level,
-        structlog.processors.JSONRenderer()
-    ],
-    wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
-    context_class=dict,
-    logger_factory=structlog.PrintLoggerFactory(),
-    cache_logger_on_first_use=True,
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, ConfigDict, Field
+
+from esdp_decide import (
+    DECISION_THRESHOLD,
+    FEATURE_SCHEMA_SHA256,
+    FROZEN_FEATURES,
+    FROZEN_MODEL_SHA256,
+    LEGAL_DECISION_ROUNDS,
+    MAX_RACON_ROUND,
+    MODEL_VERSION,
+    DEFAULT_MODEL_PATH,
+    Decision,
+    ESDPError,
+    InputValidationError,
+    ModelValidationError,
+    PolishingState,
+    decide,
+    model_info,
 )
 
-logger = structlog.get_logger()
 
-# ============================================================
-# FastAPI App
-# ============================================================
+# =============================================================================
+# FASTAPI APP
+# =============================================================================
+
 app = FastAPI(
-    title="ESDP Polishing Decision API",
-    description="Production API for Oxford Nanopore polishing decisions",
-    version="1.0.0"
+    title="ESDP Sequential Decision API",
+    description=(
+        "REST API for the frozen ESDP sequential STOP/CONTINUE controller "
+        "for adaptive bacterial long-read Racon polishing."
+    ),
+    version="2.0.0",
 )
 
-# ============================================================
-# In-memory metrics (simple implementation)
-# ============================================================
-METRICS = {
-    "total_requests": 0,
-    "successful_predictions": 0,
-    "failed_predictions": 0,
-    "avg_response_time_ms": 0.0,
-    "decisions_by_rounds": {1: 0, 3: 0, 5: 0}
-}
 
-# ============================================================
-# Pydantic Models (API Contract)
-# ============================================================
+# =============================================================================
+# REQUEST / RESPONSE MODELS
+# =============================================================================
+
 class PredictionRequest(BaseModel):
-    """Request schema - matches PolishingMetrics exactly"""
-    # Metadata
-    sample_id: str = Field(..., description="Unique sample identifier")
-    genus: Optional[str] = Field(None, description="Bacterial genus")
-    round: Optional[int] = Field(None, description="Current polishing round")
+    """
+    ESDP operational inference request.
 
-    # Core assembly metrics
-    coverage: Optional[float] = None
-    coverage_effective: Optional[float] = None
-    n50: Optional[float] = None
-    qv: Optional[float] = None
-    error_rate: Optional[float] = None
-    busco_complete: Optional[float] = None
-    num_contigs: Optional[int] = None
-    total_length: Optional[int] = None
+    sample_id is metadata only and is not supplied to the model.
+    """
 
-    # Raw read metrics
-    raw_total_bp: Optional[float] = None
-    raw_read_n50: Optional[float] = None
-    raw_mean_read_len: Optional[float] = None
-
-    # Assembly info metrics
-    ai_num_contigs: Optional[int] = None
-    ai_total_bp: Optional[int] = None
-    ai_mean_cov: Optional[float] = None
-    ai_median_cov: Optional[float] = None
-    ai_cov_cv: Optional[float] = None
-    ai_circular_n: Optional[int] = None
-    ai_circular_bp_frac: Optional[float] = None
-    ai_repeat_bp_frac: Optional[float] = None
-    ai_longest_len: Optional[int] = None
-    ai_longest_cov: Optional[float] = None
-
-    # Polishing metrics
-    polish_mean_contig_cov: Optional[float] = None
-    align_err_consensus: Optional[float] = None
-    align_err_polishing: Optional[float] = None
-
-    # Flye metrics
-    ovlp_div_initial: Optional[float] = None
-    ovlp_median_div_first: Optional[float] = None
-    mean_edge_coverage: Optional[float] = None
-
-    # Additional features
-    delta_qv: Optional[float] = None
-    delta_busco_complete: Optional[float] = None
-    delta_error_rate: Optional[float] = None
-    qv_improvement_rate: Optional[float] = None
-    assembly_error: Optional[float] = None
-
-    # Control parameters (NEW: paper-grade transparency)
-    force_conservative: bool = Field(
-        False, 
-        description="Force conservative recommendation (always R5)"
-    )
-    confidence_threshold: float = Field(
-        0.5,
-        ge=0.0,
-        le=1.0,
-        description="Confidence threshold for automatic conservative bias (default: 0.5)"
-    )
-
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
             "example": {
                 "sample_id": "sample_001",
-                "genus": "Escherichia",
-                "round": 1,
-                "coverage": 50.0,
-                "coverage_effective": 48.0,
-                "n50": 4500000,
-                "qv": 35.2,
-                "error_rate": 0.0003,
-                "busco_complete": 95.5,
-                "num_contigs": 1,
-                "total_length": 4800000,
-                "force_conservative": False,
-                "confidence_threshold": 0.5
+                "round": 2,
+                "coverage_est": 40.0,
+                "expected_genome_size": 5000000.0,
+                "raw_read_n50": 15000.0,
+                "ai_cov_cv": 0.20,
+                "current_n50": 4800000.0,
+                "current_num_contigs": 2,
+                "current_assembly_frac": 0.99,
+                "delta_n50_last": 25000.0,
+                "n50_from_R1": 40000.0,
             }
-        }
+        },
+    )
+
+    sample_id: str = Field(
+        ...,
+        min_length=1,
+        description="Sample identifier. Metadata only; not used as a predictor.",
+    )
+
+    round: int = Field(
+        ...,
+        ge=1,
+        le=4,
+        description="Current Racon decision round. Legal values: 1-4.",
+    )
+
+    coverage_est: Optional[float] = Field(
+        None,
+        ge=0,
+        description="Estimated sequencing coverage.",
+    )
+
+    expected_genome_size: Optional[float] = Field(
+        None,
+        ge=0,
+        description="Expected genome size in base pairs.",
+    )
+
+    raw_read_n50: Optional[float] = Field(
+        None,
+        ge=0,
+        description="Raw-read N50.",
+    )
+
+    ai_cov_cv: Optional[float] = Field(
+        None,
+        ge=0,
+        description=(
+            "Coverage coefficient of variation from Flye assembly information: "
+            "coverage standard deviation / mean coverage."
+        ),
+    )
+
+    current_n50: Optional[float] = Field(
+        None,
+        ge=0,
+        description="N50 of the current Racon-polished assembly.",
+    )
+
+    current_num_contigs: Optional[float] = Field(
+        None,
+        ge=0,
+        description="Number of contigs in the current assembly.",
+    )
+
+    current_assembly_frac: Optional[float] = Field(
+        None,
+        ge=0,
+        description=(
+            "Current assembly length divided by expected genome size."
+        ),
+    )
+
+    delta_n50_last: Optional[float] = Field(
+        None,
+        description=(
+            "Current N50 minus N50 from the previous Racon round. "
+            "May be missing at R1."
+        ),
+    )
+
+    n50_from_R1: Optional[float] = Field(
+        None,
+        description=(
+            "Current N50 minus N50 at R1. "
+            "May be missing at R1."
+        ),
+    )
 
 
 class PredictionResponse(BaseModel):
-    """Response schema with full transparency"""
     sample_id: str
-    recommended_rounds: int
-    confidence: float
-    reasoning: str
-    warnings: List[str]
-    rule_overrides: Dict[str, Any]  # NEW: explicit rule tracking
+    round: int
+
+    p_continue: float
+    threshold: float
+
+    decision: str
+    next_action: str
+
     model_version: str
-    class_probabilities: Dict[str, float]
-    processing_time_ms: float
+    model_sha256: str
+    feature_schema_sha256: str
+
+    missing_features: List[str]
 
 
-# ============================================================
-# Middleware for logging
-# ============================================================
-@app.middleware("http")
-async def log_requests(request: Request, call_next):
-    """Log all requests with structured logging"""
-    start_time = time.time()
-
-    # Log request
-    logger.info(
-        "request_received",
-        method=request.method,
-        path=request.url.path,
-        client=request.client.host if request.client else "unknown"
-    )
-
-    # Process request
-    try:
-        response = await call_next(request)
-        duration_ms = (time.time() - start_time) * 1000
-
-        # Log response
-        logger.info(
-            "request_completed",
-            method=request.method,
-            path=request.url.path,
-            status_code=response.status_code,
-            duration_ms=round(duration_ms, 2)
-        )
-
-        return response
-
-    except Exception as e:
-        duration_ms = (time.time() - start_time) * 1000
-        logger.error(
-            "request_failed",
-            method=request.method,
-            path=request.url.path,
-            error=str(e),
-            duration_ms=round(duration_ms, 2)
-        )
-        raise
+class HealthResponse(BaseModel):
+    status: str
+    service: str
+    api_version: str
+    model_version: str
+    timestamp_utc: str
 
 
-# ============================================================
-# API Endpoints
-# ============================================================
+class ModelInfoResponse(BaseModel):
+    model_version: str
+    model_type: str
+    decision_threshold: float
+    legal_decision_rounds: List[int]
+    maximum_racon_round: int
+    feature_count: int
+    features: List[str]
+    feature_schema_sha256: str
+    model_sha256: str
+    model_path: str
+
+
+# =============================================================================
+# ROOT
+# =============================================================================
+
 @app.get("/")
 async def root():
-    """Root endpoint"""
     return {
-        "service": "ESDP Polishing Decision API",
-        "version": "1.0.0",
-        "status": "operational",
+        "service": "ESDP Sequential Decision API",
+        "api_version": "2.0.0",
+        "model_version": MODEL_VERSION,
+        "decision_threshold": DECISION_THRESHOLD,
+        "legal_decision_rounds": list(LEGAL_DECISION_ROUNDS),
+        "maximum_racon_round": MAX_RACON_ROUND,
         "endpoints": {
             "predict": "/predict",
             "health": "/health",
-            "metrics": "/metrics",
-            "model_info": "/model/info"
-        }
+            "model_info": "/model/info",
+            "docs": "/docs",
+            "openapi": "/openapi.json",
+        },
     }
 
 
-@app.get("/health")
-async def health_check():
-    """Health check endpoint"""
-    return {
-        "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat(),
-        "service": "esdp-api"
-    }
+# =============================================================================
+# HEALTH
+# =============================================================================
 
-
-@app.get("/metrics")
-async def get_metrics():
-    """Return service metrics"""
-    return {
-        "metrics": METRICS,
-        "timestamp": datetime.utcnow().isoformat()
-    }
-
-
-@app.get("/model/info")
-async def model_info():
-    """Return model metadata"""
-    try:
-        import joblib
-        pipeline = joblib.load("models/best_model_pipeline.pkl")
-
-        return {
-            "model_version": getattr(pipeline, 'model_version', 'unknown'),
-            "feature_count": len(getattr(pipeline, 'feature_names', [])),
-            "model_type": type(pipeline.named_steps['model']).__name__ if hasattr(pipeline, 'named_steps') else "unknown"
-        }
-    except Exception as e:
-        logger.error("model_info_failed", error=str(e))
-        raise HTTPException(status_code=500, detail=f"Failed to load model info: {str(e)}")
-
-
-@app.post("/predict", response_model=PredictionResponse)
-async def predict(request: PredictionRequest):
+@app.get(
+    "/health",
+    response_model=HealthResponse,
+)
+async def health():
     """
-    Make polishing decision based on input metrics.
+    Service-level health endpoint.
 
-    Returns recommended number of polishing rounds with confidence score
-    and full transparency on applied rules.
-
-    Parameters:
-    - force_conservative: Force recommendation to R5 (overrides all other logic)
-    - confidence_threshold: Threshold for automatic conservative bias (default: 0.5)
+    This endpoint confirms that the API process is running.
+    Model integrity is reported separately by /model/info.
     """
-    start_time = time.time()
-    METRICS["total_requests"] += 1
+
+    return HealthResponse(
+        status="healthy",
+        service="esdp-api",
+        api_version="2.0.0",
+        model_version=MODEL_VERSION,
+        timestamp_utc=datetime.now(
+            timezone.utc
+        ).isoformat(),
+    )
+
+
+# =============================================================================
+# MODEL INFO
+# =============================================================================
+
+@app.get(
+    "/model/info",
+    response_model=ModelInfoResponse,
+)
+async def get_model_info():
+    """
+    Return metadata for the frozen ESDP model.
+
+    Loading this endpoint verifies that the artifact is readable and
+    satisfies the expected SHA256 contract.
+    """
 
     try:
-        # Convert request to PolishingMetrics
-        metrics = PolishingMetrics(
-            **request.dict(exclude={'force_conservative', 'confidence_threshold'})
+        info = model_info(
+            model_path=DEFAULT_MODEL_PATH,
+            verify_model_sha256=True,
         )
 
-        # Make decision with explicit parameters
-        decision = decide(
-            metrics,
-            model_path="models/best_model_pipeline.pkl",
-            confidence_threshold=request.confidence_threshold,
-            force_conservative=request.force_conservative
+        return ModelInfoResponse(
+            **info
         )
 
-        # Update metrics
-        METRICS["successful_predictions"] += 1
-        METRICS["decisions_by_rounds"][decision.recommended_rounds] = \
-            METRICS["decisions_by_rounds"].get(decision.recommended_rounds, 0) + 1
-
-        # Calculate processing time
-        processing_time_ms = (time.time() - start_time) * 1000
-
-        # Update avg response time
-        total = METRICS["successful_predictions"]
-        METRICS["avg_response_time_ms"] = (
-            (METRICS["avg_response_time_ms"] * (total - 1) + processing_time_ms) / total
-        )
-
-        # Log decision
-        logger.info(
-            "prediction_success",
-            sample_id=decision.sample_id,
-            recommended_rounds=decision.recommended_rounds,
-            confidence=round(decision.confidence, 3),
-            rule_overrides=decision.rule_overrides,
-            processing_time_ms=round(processing_time_ms, 2)
-        )
-
-        # Return response
-        return PredictionResponse(
-            sample_id=decision.sample_id,
-            recommended_rounds=decision.recommended_rounds,
-            confidence=decision.confidence,
-            reasoning=decision.reasoning,
-            warnings=decision.warnings,
-            rule_overrides=decision.rule_overrides,  # NEW: explicit tracking
-            model_version=decision.model_version,
-            class_probabilities=decision.class_probabilities,
-            processing_time_ms=round(processing_time_ms, 2)
-        )
-
-    except Exception as e:
-        METRICS["failed_predictions"] += 1
-        logger.error(
-            "prediction_failed",
-            sample_id=request.sample_id,
-            error=str(e),
-            error_type=type(e).__name__
-        )
+    except ModelValidationError as exc:
         raise HTTPException(
             status_code=500,
-            detail=f"Prediction failed: {str(e)}"
+            detail={
+                "error": "model_validation_error",
+                "message": str(exc),
+            },
+        ) from exc
+
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "model_info_error",
+                "message": str(exc),
+            },
+        ) from exc
+
+
+# =============================================================================
+# PREDICT
+# =============================================================================
+
+@app.post(
+    "/predict",
+    response_model=PredictionResponse,
+)
+async def predict(
+    request: PredictionRequest,
+):
+    """
+    Return one sequential ESDP STOP/CONTINUE decision.
+
+    Decision rule:
+        p_continue >= 0.45 -> CONTINUE
+        p_continue <  0.45 -> STOP
+
+    Workflow:
+        STOP -> MEDAKA
+
+        CONTINUE at R1-R3 ->
+            execute the next Racon round and re-evaluate.
+
+        CONTINUE at R4 ->
+            execute R5 and proceed directly to MEDAKA.
+    """
+
+    try:
+        state = PolishingState(
+            sample_id=request.sample_id,
+            round=request.round,
+            coverage_est=request.coverage_est,
+            expected_genome_size=request.expected_genome_size,
+            raw_read_n50=request.raw_read_n50,
+            ai_cov_cv=request.ai_cov_cv,
+            current_n50=request.current_n50,
+            current_num_contigs=request.current_num_contigs,
+            current_assembly_frac=request.current_assembly_frac,
+            delta_n50_last=request.delta_n50_last,
+            n50_from_R1=request.n50_from_R1,
         )
 
+        result: Decision = decide(
+            state,
+            model_path=DEFAULT_MODEL_PATH,
+            verify_model_sha256=True,
+        )
 
-# ============================================================
-# Startup/Shutdown Events
-# ============================================================
-@app.on_event("startup")
-async def startup_event():
-    """Log startup"""
-    logger.info("api_startup", message="ESDP API starting up")
+        return PredictionResponse(
+            **result.to_dict()
+        )
+
+    except InputValidationError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "input_validation_error",
+                "message": str(exc),
+            },
+        ) from exc
+
+    except ModelValidationError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "model_validation_error",
+                "message": str(exc),
+            },
+        ) from exc
+
+    except ESDPError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "esdp_error",
+                "message": str(exc),
+            },
+        ) from exc
+
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "unexpected_error",
+                "message": str(exc),
+            },
+        ) from exc
 
 
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Log shutdown"""
-    logger.info("api_shutdown", message="ESDP API shutting down", metrics=METRICS)
+# =============================================================================
+# RUN LOCALLY
+# =============================================================================
 
-
-# ============================================================
-# Run with: uvicorn api_service:app --reload --host 0.0.0.0 --port 8000
-# ============================================================
 if __name__ == "__main__":
+
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+
+    uvicorn.run(
+        "api_service:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=False,
+    )

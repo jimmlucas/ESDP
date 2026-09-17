@@ -1,0 +1,41 @@
+{
+  "artifact_status": "FROZEN_DEVELOPMENT_MODEL",
+  "model_name": "ESDP sequential RF v2",
+  "model_file": "esdp_sequential_rf_v2.joblib",
+  "model_family": "RandomForestClassifier",
+  "training_formulation": "all observed legal R1-R4 states",
+  "n_training_states": 508,
+  "n_biological_samples": 32,
+  "n_trajectories": 127,
+  "features": [
+    "round",
+    "coverage_est",
+    "expected_genome_size",
+    "raw_read_n50",
+    "ai_cov_cv",
+    "current_n50",
+    "current_num_contigs",
+    "current_assembly_frac",
+    "delta_n50_last",
+    "n50_from_R1"
+  ],
+  "feature_sha256": "2f50cc9c6169c325da21e189b309623d872cbfdf4a025588c786c6e9f4576ced",
+  "protocol_v2_sha256": "74b5c35e572911530da47e46ed3d87c615dfa20fd251fd87f92b4b0fffae82c2",
+  "policy_freeze_sha256": "46d6284febb9b4f47b8048d6be4733776eb31584f91f38d48be94371f88c7059",
+  "target_definition": "CONTINUE iff maximum future canonical Complete BUSCO gain after current round is >= 2 markers",
+  "threshold": 0.45,
+  "decision_rule": "CONTINUE if p_continue >= 0.45; otherwise STOP",
+  "maximum_racon_round": 5,
+  "medaka_after_stop": true,
+  "rf_parameters": {
+    "n_estimators": 500,
+    "max_depth": 3,
+    "min_samples_leaf": 8,
+    "max_features": "sqrt",
+    "class_weight": "balanced",
+    "random_state": 42
+  },
+  "performance_source": "Use grouped OOF / nested development outputs. Training-fit probabilities are not performance estimates.",
+  "threshold_tuning_closed": true,
+  "holdout_used_for_fit": false
+}

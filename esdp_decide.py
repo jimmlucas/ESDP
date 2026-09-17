@@ -1,403 +1,886 @@
 #!/usr/bin/env python3
 """
-esdp_decide.py - Production-grade decision logic for ESDP
+esdp_decide.py
 
-This module provides a clean, reusable decision function that:
-1. Loads the bundled sklearn pipeline (imputer + scaler + model)
-2. Applies domain-specific rules with configurable thresholds
-3. Returns structured decisions with full transparency
+Sequential inference controller for ESDP
+(Early Stop Decision Polishing).
 
-Usage:
-    from esdp_decide import decide, PolishingMetrics
+This module implements the frozen sequential ESDP policy described in the
+revised manuscript.
 
-    metrics = PolishingMetrics(sample_id="sample_001", ...)
-    decision = decide(metrics, confidence_threshold=0.5)
-    print(f"Recommended rounds: {decision.recommended_rounds}")
+At each legal Racon decision state (R1-R4), the frozen model estimates:
+
+    p_continue = P(CONTINUE | current and prior operational information)
+
+Decision rule
+-------------
+    p_continue >= 0.45  -> CONTINUE
+    p_continue <  0.45  -> STOP
+
+Workflow action
+---------------
+    STOP at R1-R4:
+        retain current Racon assembly and proceed to mandatory Medaka.
+
+    CONTINUE at R1-R3:
+        execute Racon round k+1 and re-evaluate.
+
+    CONTINUE at R4:
+        execute R5 and then proceed directly to mandatory Medaka.
+
+No ESDP decision is made after R5.
+
+Operational inference does NOT require:
+- BUSCO execution
+- a reference genome
+- mapping-derived QV/error metrics
+- bacterial genus
+- sample identity as a predictor
+- information from future polishing rounds
+
+Frozen model
+------------
+Default artifact:
+    outputs/frozen_sequential_model_v2/esdp_sequential_rf_v2.joblib
+
+Frozen decision threshold:
+    0.45
+
+Expected artifact SHA256:
+    9f9f08428242e98381546b9c79cd3d9b013c412b3edcbfe01ca84bb6f4c10dcf
 """
 
-import joblib
-import warnings
-from dataclasses import dataclass, asdict, field
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass
+from functools import lru_cache
+from hashlib import sha256
 from pathlib import Path
-from typing import List, Optional, Dict, Any
+from typing import Any, Dict, List, Optional
+
+import joblib
 import numpy as np
 import pandas as pd
 
 
-@dataclass
-class PolishingMetrics:
-    """Input metrics for polishing decision (API contract)"""
-    # Metadata
+# =============================================================================
+# FROZEN SEQUENTIAL POLICY
+# =============================================================================
+
+MODEL_VERSION = "esdp-sequential-rf-v2"
+
+DECISION_THRESHOLD = 0.45
+
+LEGAL_DECISION_ROUNDS = (1, 2, 3, 4)
+
+MAX_RACON_ROUND = 5
+
+FROZEN_FEATURES = (
+    "round",
+    "coverage_est",
+    "expected_genome_size",
+    "raw_read_n50",
+    "ai_cov_cv",
+    "current_n50",
+    "current_num_contigs",
+    "current_assembly_frac",
+    "delta_n50_last",
+    "n50_from_R1",
+)
+
+FEATURE_SCHEMA_SHA256 = (
+    "2f50cc9c6169c325da21e189b309623d872cbfdf4a025588c786c6e9f4576ced"
+)
+
+FROZEN_MODEL_SHA256 = (
+    "9f9f08428242e98381546b9c79cd3d9b013c412b3edcbfe01ca84bb6f4c10dcf"
+)
+
+DEFAULT_MODEL_PATH = (
+    Path(__file__).resolve().parent
+    / "outputs"
+    / "frozen_sequential_model_v2"
+    / "esdp_sequential_rf_v2.joblib"
+)
+
+
+# =============================================================================
+# EXCEPTIONS
+# =============================================================================
+
+class ESDPError(RuntimeError):
+    """Base exception for ESDP inference."""
+
+
+class ModelValidationError(ESDPError):
+    """Raised when the frozen model artifact fails validation."""
+
+
+class InputValidationError(ESDPError):
+    """Raised when an inference request violates the operational contract."""
+
+
+# =============================================================================
+# INPUT CONTRACT
+# =============================================================================
+
+@dataclass(frozen=True)
+class PolishingState:
+    """
+    Operational state supplied to ESDP at the current Racon round.
+
+    sample_id is metadata only and is NEVER supplied to the model.
+
+    Predictors
+    ----------
+    round
+        Current Racon polishing round. Legal decision states are R1-R4.
+
+    coverage_est
+        Estimated sequencing coverage obtained from the Flye process.
+
+    expected_genome_size
+        Expected genome size in base pairs.
+
+    raw_read_n50
+        N50 of the raw sequencing reads.
+
+    ai_cov_cv
+        Coverage coefficient of variation derived from Flye assembly_info.txt:
+            std(coverage) / mean(coverage)
+
+    current_n50
+        N50 of the current Racon-polished assembly.
+
+    current_num_contigs
+        Number of contigs in the current assembly.
+
+    current_assembly_frac
+        Current assembly length / expected genome size.
+
+    delta_n50_last
+        N50_k - N50_(k-1).
+        At R1 this feature may be missing.
+
+    n50_from_R1
+        N50_k - N50_R1.
+        At R1 this feature may be missing.
+    """
+
     sample_id: str
-    genus: Optional[str] = None
-    round: Optional[int] = None
 
-    # Core assembly metrics
-    coverage: Optional[float] = None
-    coverage_effective: Optional[float] = None
-    n50: Optional[float] = None
-    qv: Optional[float] = None
-    error_rate: Optional[float] = None
-    busco_complete: Optional[float] = None
-    num_contigs: Optional[int] = None
-    total_length: Optional[int] = None
+    round: int
 
-    # Raw read metrics
-    raw_total_bp: Optional[float] = None
-    raw_read_n50: Optional[float] = None
-    raw_mean_read_len: Optional[float] = None
+    coverage_est: Optional[float]
+    expected_genome_size: Optional[float]
+    raw_read_n50: Optional[float]
+    ai_cov_cv: Optional[float]
 
-    # Assembly info metrics
-    ai_num_contigs: Optional[int] = None
-    ai_total_bp: Optional[int] = None
-    ai_mean_cov: Optional[float] = None
-    ai_median_cov: Optional[float] = None
-    ai_cov_cv: Optional[float] = None
-    ai_circular_n: Optional[int] = None
-    ai_circular_bp_frac: Optional[float] = None
-    ai_repeat_bp_frac: Optional[float] = None
-    ai_longest_len: Optional[int] = None
-    ai_longest_cov: Optional[float] = None
+    current_n50: Optional[float]
+    current_num_contigs: Optional[float]
+    current_assembly_frac: Optional[float]
 
-    # Polishing metrics
-    polish_mean_contig_cov: Optional[float] = None
-    align_err_consensus: Optional[float] = None
-    align_err_polishing: Optional[float] = None
-
-    # Flye metrics
-    ovlp_div_initial: Optional[float] = None
-    ovlp_median_div_first: Optional[float] = None
-    mean_edge_coverage: Optional[float] = None
-
-    # Additional features (can be computed or provided)
-    delta_qv: Optional[float] = None
-    delta_busco_complete: Optional[float] = None
-    delta_error_rate: Optional[float] = None
-    qv_improvement_rate: Optional[float] = None
-    assembly_error: Optional[float] = None
+    delta_n50_last: Optional[float] = None
+    n50_from_R1: Optional[float] = None
 
 
-@dataclass
+# =============================================================================
+# OUTPUT CONTRACT
+# =============================================================================
+
+@dataclass(frozen=True)
 class Decision:
-    """Output decision (API contract with full transparency)"""
+    """
+    Structured ESDP sequential decision.
+
+    decision
+        STOP or CONTINUE.
+
+    p_continue
+        Frozen Random Forest probability assigned to CONTINUE.
+
+    threshold
+        Frozen operational threshold (0.45).
+
+    next_action
+        Concrete workflow action following the decision.
+    """
+
     sample_id: str
-    recommended_rounds: int
-    confidence: float
-    reasoning: str
-    warnings: List[str]
-    rule_overrides: Dict[str, Any]  # NEW: explicit rule tracking
+    round: int
+
+    p_continue: float
+    threshold: float
+
+    decision: str
+    next_action: str
+
     model_version: str
-    class_probabilities: Dict[str, float]
+    model_sha256: str
+    feature_schema_sha256: str
+
+    missing_features: List[str]
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Return a JSON-serializable representation."""
+        return asdict(self)
 
 
-def engineer_features_online(metrics: PolishingMetrics) -> Dict[str, float]:
+# =============================================================================
+# UTILITIES
+# =============================================================================
+
+def _sha256_file(path: Path) -> str:
+    """Calculate SHA256 for a file."""
+
+    digest = sha256()
+
+    with path.open("rb") as handle:
+        for block in iter(
+            lambda: handle.read(1024 * 1024),
+            b"",
+        ):
+            digest.update(block)
+
+    return digest.hexdigest()
+
+
+def _normalize_numeric(
+    value: Optional[float],
+) -> float:
     """
-    Compute derived features from raw metrics (online feature engineering).
+    Convert operational values to numeric form.
 
-    This mirrors the feature engineering done during training but operates
-    on a single sample at inference time.
+    None and non-finite values are represented as NaN so that the
+    preprocessing embedded in the frozen sklearn pipeline handles them
+    consistently with model development.
     """
-    features = {}
 
-    # Basic ratios
-    if metrics.coverage and metrics.coverage_effective:
-        features['coverage_efficiency'] = metrics.coverage_effective / metrics.coverage
+    if value is None:
+        return np.nan
 
-    if metrics.n50 and metrics.total_length:
-        features['n50_ratio'] = metrics.n50 / metrics.total_length
+    try:
+        value = float(value)
+    except (TypeError, ValueError) as exc:
+        raise InputValidationError(
+            f"Expected numeric predictor, received {value!r}."
+        ) from exc
 
-    if metrics.busco_complete and metrics.num_contigs:
-        features['busco_per_contig'] = metrics.busco_complete / metrics.num_contigs
+    if not np.isfinite(value):
+        return np.nan
 
-    # Assembly quality score
-    if metrics.qv and metrics.busco_complete and metrics.num_contigs:
-        features['assembly_quality_score'] = (
-            metrics.qv * 0.4 + 
-            metrics.busco_complete * 0.4 - 
-            np.log1p(metrics.num_contigs) * 0.2
+    return value
+
+
+# =============================================================================
+# INPUT VALIDATION
+# =============================================================================
+
+def validate_state(
+    state: PolishingState,
+) -> None:
+    """Validate legal sequential inference state."""
+
+    if not isinstance(state.sample_id, str):
+        raise InputValidationError(
+            "sample_id must be a string."
         )
 
-    # Coverage metrics
-    if metrics.ai_mean_cov and metrics.ai_median_cov:
-        features['cov_mean_median_ratio'] = metrics.ai_mean_cov / metrics.ai_median_cov
+    if not state.sample_id.strip():
+        raise InputValidationError(
+            "sample_id cannot be empty."
+        )
 
-    # Error metrics
-    if metrics.error_rate and metrics.align_err_polishing:
-        features['error_improvement'] = metrics.error_rate - metrics.align_err_polishing
+    if state.round not in LEGAL_DECISION_ROUNDS:
+        raise InputValidationError(
+            "ESDP decisions are only defined after Racon rounds "
+            f"R1-R4. Received round={state.round}. "
+            "R5 is the maximum Racon budget and proceeds directly "
+            "to mandatory Medaka without another ESDP decision."
+        )
 
-    return features
+    # Quantities that should never be negative when present.
+    non_negative_fields = (
+        "coverage_est",
+        "expected_genome_size",
+        "raw_read_n50",
+        "ai_cov_cv",
+        "current_n50",
+        "current_num_contigs",
+        "current_assembly_frac",
+    )
+
+    for field_name in non_negative_fields:
+
+        value = getattr(
+            state,
+            field_name,
+        )
+
+        if value is None:
+            continue
+
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError) as exc:
+            raise InputValidationError(
+                f"{field_name} must be numeric."
+            ) from exc
+
+        if np.isfinite(numeric) and numeric < 0:
+            raise InputValidationError(
+                f"{field_name} cannot be negative."
+            )
 
 
-def check_r1_quality(metrics: PolishingMetrics) -> tuple[bool, str]:
-    """
-    Check if R1 quality is already excellent (domain rule).
-
-    Returns:
-        (is_excellent, reason)
-    """
-    if metrics.qv and metrics.busco_complete:
-        if metrics.qv >= 35 and metrics.busco_complete >= 95:
-            return True, f"R1 quality excellent (QV={metrics.qv:.1f}, BUSCO={metrics.busco_complete:.1f}%)"
-
-    return False, ""
-
-
-def apply_conservative_bias(
-    predicted_class: int,
-    confidence: float,
-    confidence_threshold: float
-) -> tuple[int, bool, str]:
-    """
-    Apply conservative bias if confidence is below threshold.
-
-    Args:
-        predicted_class: 0-indexed class (0=Early, 1=Medium, 2=Late)
-        confidence: Prediction confidence (0-1)
-        confidence_threshold: Threshold for applying bias
-
-    Returns:
-        (adjusted_class, was_applied, reason)
-    """
-    if confidence < confidence_threshold:
-        adjusted = min(predicted_class + 1, 2)  # Cap at class 2 (Late)
-        reason = f"Confidence ({confidence:.3f}) below threshold ({confidence_threshold})"
-        return adjusted, True, reason
-
-    return predicted_class, False, ""
-
+# =============================================================================
+# FEATURE CONSTRUCTION
+# =============================================================================
 
 def prepare_features(
-    metrics: PolishingMetrics,
-    feature_names: List[str]
+    state: PolishingState,
 ) -> pd.DataFrame:
     """
-    Prepare feature vector from metrics.
+    Construct the exact frozen 10-feature vector.
 
-    Args:
-        metrics: Input polishing metrics
-        feature_names: Expected feature names from training
+    No retrospective or outcome-derived metric is created here.
 
-    Returns:
-        DataFrame with features in correct order
+    In particular, this function does NOT calculate or consume:
+    BUSCO, QV, reference-derived errors, genus, or future-round information.
     """
-    # Convert metrics to dict
-    metrics_dict = asdict(metrics)
 
-    # Remove metadata fields
-    metadata_fields = ['sample_id', 'genus', 'round']
-    for field in metadata_fields:
-        metrics_dict.pop(field, None)
+    validate_state(state)
 
-    # Create DataFrame with available features
-    features = pd.DataFrame([metrics_dict])
+    values = {
+        "round": float(state.round),
+        "coverage_est":
+            _normalize_numeric(state.coverage_est),
+        "expected_genome_size":
+            _normalize_numeric(state.expected_genome_size),
+        "raw_read_n50":
+            _normalize_numeric(state.raw_read_n50),
+        "ai_cov_cv":
+            _normalize_numeric(state.ai_cov_cv),
+        "current_n50":
+            _normalize_numeric(state.current_n50),
+        "current_num_contigs":
+            _normalize_numeric(state.current_num_contigs),
+        "current_assembly_frac":
+            _normalize_numeric(state.current_assembly_frac),
+        "delta_n50_last":
+            _normalize_numeric(state.delta_n50_last),
+        "n50_from_R1":
+            _normalize_numeric(state.n50_from_R1),
+    }
 
-    # Add missing features as NaN (pipeline will impute them)
-    for feat in feature_names:
-        if feat not in features.columns:
-            features[feat] = np.nan
+    frame = pd.DataFrame(
+        [values],
+        columns=list(FROZEN_FEATURES),
+    )
 
-    # Reorder to match training
-    features = features[feature_names]
+    # Fail closed if the operational schema is altered accidentally.
+    if tuple(frame.columns) != FROZEN_FEATURES:
+        raise InputValidationError(
+            "Operational feature order does not match "
+            "the frozen ESDP v2 feature contract."
+        )
 
-    # Replace infinite values with NaN
-    features = features.replace([np.inf, -np.inf], np.nan)
+    return frame
 
-    return features
+
+# =============================================================================
+# MODEL LOADING AND VALIDATION
+# =============================================================================
+
+def _extract_estimator(
+    artifact: Any,
+) -> Any:
+    """
+    Return the sklearn-compatible estimator from the serialized artifact.
+
+    The canonical v2 artifact is expected to be directly callable through
+    predict_proba(). This small compatibility layer also supports a wrapper
+    dictionary containing a 'pipeline' or 'model' entry.
+    """
+
+    if hasattr(
+        artifact,
+        "predict_proba",
+    ):
+        return artifact
+
+    if isinstance(
+        artifact,
+        dict,
+    ):
+        for key in (
+            "pipeline",
+            "model",
+            "estimator",
+        ):
+            candidate = artifact.get(key)
+
+            if (
+                candidate is not None
+                and hasattr(
+                    candidate,
+                    "predict_proba",
+                )
+            ):
+                return candidate
+
+    raise ModelValidationError(
+        "Frozen artifact does not expose a sklearn-compatible "
+        "predict_proba() estimator."
+    )
+
+
+def _validate_model_features(
+    estimator: Any,
+) -> None:
+    """
+    Validate feature names when exposed by sklearn.
+
+    Older sklearn composites may not expose feature_names_in_ directly.
+    In that case the explicit DataFrame contract remains authoritative.
+    """
+
+    names = getattr(
+        estimator,
+        "feature_names_in_",
+        None,
+    )
+
+    if names is None:
+        return
+
+    observed = tuple(
+        str(x)
+        for x in names
+    )
+
+    if observed != FROZEN_FEATURES:
+        raise ModelValidationError(
+            "Frozen model feature contract mismatch.\n"
+            f"Expected: {FROZEN_FEATURES}\n"
+            f"Observed: {observed}"
+        )
+
+
+@lru_cache(maxsize=4)
+def load_frozen_model(
+    model_path: str,
+    verify_sha256: bool = True,
+) -> tuple[Any, str]:
+    """
+    Load and validate the frozen ESDP v2 model.
+
+    The result is cached so API requests do not reload the model from disk.
+    """
+
+    path = Path(
+        model_path
+    ).expanduser().resolve()
+
+    if not path.exists():
+        raise ModelValidationError(
+            f"Frozen ESDP model not found: {path}"
+        )
+
+    observed_sha = _sha256_file(
+        path
+    )
+
+    if (
+        verify_sha256
+        and observed_sha != FROZEN_MODEL_SHA256
+    ):
+        raise ModelValidationError(
+            "Frozen model SHA256 mismatch.\n"
+            f"Expected: {FROZEN_MODEL_SHA256}\n"
+            f"Observed: {observed_sha}\n"
+            f"Artifact: {path}"
+        )
+
+    artifact = joblib.load(
+        path
+    )
+
+    estimator = _extract_estimator(
+        artifact
+    )
+
+    _validate_model_features(
+        estimator
+    )
+
+    return estimator, observed_sha
+
+
+# =============================================================================
+# PROBABILITY EXTRACTION
+# =============================================================================
+
+def _continue_probability(
+    estimator: Any,
+    X: pd.DataFrame,
+) -> float:
+    """
+    Return probability assigned to the CONTINUE class.
+
+    The sequential target is binary:
+        0 = STOP
+        1 = CONTINUE
+    """
+
+    probabilities = estimator.predict_proba(
+        X
+    )
+
+    probabilities = np.asarray(
+        probabilities
+    )
+
+    if probabilities.shape != (1, 2):
+        raise ModelValidationError(
+            "Sequential ESDP model must return exactly two "
+            "class probabilities (STOP, CONTINUE). "
+            f"Observed shape: {probabilities.shape}"
+        )
+
+    classes = getattr(
+        estimator,
+        "classes_",
+        None,
+    )
+
+    # sklearn Pipeline exposes classes_ from the final estimator.
+    if classes is None:
+        raise ModelValidationError(
+            "Frozen classifier does not expose classes_."
+        )
+
+    classes = list(classes)
+
+    if 1 not in classes:
+        raise ModelValidationError(
+            "Frozen model does not contain CONTINUE class label 1. "
+            f"Observed classes: {classes}"
+        )
+
+    continue_index = classes.index(1)
+
+    p_continue = float(
+        probabilities[
+            0,
+            continue_index,
+        ]
+    )
+
+    if not np.isfinite(
+        p_continue
+    ):
+        raise ModelValidationError(
+            "Model returned a non-finite CONTINUE probability."
+        )
+
+    if not 0.0 <= p_continue <= 1.0:
+        raise ModelValidationError(
+            "Model returned p_continue outside [0, 1]."
+        )
+
+    return p_continue
+
+
+# =============================================================================
+# WORKFLOW DECISION
+# =============================================================================
+
+def _next_action(
+    round_number: int,
+    decision: str,
+) -> str:
+    """Translate STOP/CONTINUE into a concrete polishing action."""
+
+    if decision == "STOP":
+        return "MEDAKA"
+
+    if decision != "CONTINUE":
+        raise ESDPError(
+            f"Unexpected decision: {decision}"
+        )
+
+    if round_number in (
+        1,
+        2,
+        3,
+    ):
+        return (
+            f"RACON_R{round_number + 1}"
+        )
+
+    if round_number == 4:
+        return "RACON_R5_THEN_MEDAKA"
+
+    raise InputValidationError(
+        f"No sequential action is defined for R{round_number}."
+    )
 
 
 def decide(
-    metrics: PolishingMetrics,
-    model_path: str = "models/best_model_pipeline.pkl",
-    confidence_threshold: float = 0.5,
-    force_conservative: bool = False
+    state: PolishingState,
+    model_path: str | Path = DEFAULT_MODEL_PATH,
+    verify_model_sha256: bool = True,
 ) -> Decision:
     """
-    Make polishing decision based on metrics.
+    Apply the frozen sequential ESDP policy.
 
-    Decision hierarchy:
-    1. ML model prediction
-    2. Optional force_conservative override (always recommend R5)
-    3. Automatic low-confidence override (escalate one tier)
-    4. Domain-specific safety checks
+    This function is the single source of truth for operational inference.
 
-    Args:
-        metrics: Input polishing metrics
-        model_path: Path to bundled model pipeline
-        confidence_threshold: Threshold for automatic conservative bias (default: 0.5)
-        force_conservative: If True, force recommendation to R5
-
-    Returns:
-        Decision object with recommendation and full transparency
+    No post-hoc rule layer or confidence override is applied.
     """
-    # Load bundled pipeline
-    pipeline = joblib.load(model_path)
 
-    # Extract metadata
-    feature_names = pipeline.feature_names if hasattr(pipeline, 'feature_names') else []
-    model_version = pipeline.model_version if hasattr(pipeline, 'model_version') else "v1.0.0"
+    X = prepare_features(
+        state
+    )
 
-    # Prepare features as DataFrame
-    X = prepare_features(metrics, feature_names)
+    estimator, model_sha = load_frozen_model(
+        str(
+            Path(model_path)
+            .expanduser()
+            .resolve()
+        ),
+        verify_model_sha256,
+    )
 
-    # Get prediction and probabilities
-    y_pred = pipeline.predict(X)[0]  # 0-indexed class
-    y_proba = pipeline.predict_proba(X)[0]
+    p_continue = _continue_probability(
+        estimator,
+        X,
+    )
 
-    # Map to 1-indexed rounds
-    class_to_rounds = {0: 1, 1: 3, 2: 5}
-    predicted_rounds = class_to_rounds[y_pred]
-    confidence = float(y_proba[y_pred])
-
-    # Initialize decision tracking
-    warnings_list = []
-    reasoning_parts = []
-    rule_overrides = {
-        "force_conservative": False,
-        "low_confidence_override": False,
-        "r1_quality_override": False,
-        "confidence_threshold": confidence_threshold,
-        "applied_threshold": None
-    }
-
-    # Class names for reasoning
-    class_names = {0: "Early (R1-R2)", 1: "Medium (R3-R4)", 2: "Late (R5)"}
-    base_reasoning = f"ML model predicts {class_names[y_pred]}"
-
-    # --------------------------------------------------
-    # Rule Layer (explicit and traceable)
-    # --------------------------------------------------
-
-    # Rule A: Force conservative (highest priority)
-    if force_conservative:
-        predicted_rounds = 5
-        warnings_list.append("Force conservative override applied: recommend 5 rounds")
-        reasoning_parts.append("Force conservative override triggered")
-        rule_overrides["force_conservative"] = True
-
-    # Rule B: Check R1 quality (second priority)
-    elif metrics.round == 1:
-        r1_excellent, r1_reason = check_r1_quality(metrics)
-        if r1_excellent:
-            predicted_rounds = 1
-            warnings_list.append("R1 quality excellent: early stop recommended")
-            reasoning_parts.append(r1_reason)
-            rule_overrides["r1_quality_override"] = True
-
-    # Rule C: Low confidence override (third priority)
-    if not force_conservative and not rule_overrides["r1_quality_override"]:
-        adjusted_class, was_applied, bias_reason = apply_conservative_bias(
-            y_pred, confidence, confidence_threshold
-        )
-        if was_applied:
-            predicted_rounds = class_to_rounds[adjusted_class]
-            warnings_list.append(f"Conservative bias applied: recommend {predicted_rounds} rounds")
-            reasoning_parts.append(bias_reason)
-            rule_overrides["low_confidence_override"] = True
-            rule_overrides["applied_threshold"] = confidence_threshold
-
-    # Build final reasoning
-    if reasoning_parts:
-        full_reasoning = f"{base_reasoning}. {'. '.join(reasoning_parts)}. Recommend {predicted_rounds} rounds."
+    # Frozen operational decision rule.
+    if p_continue >= DECISION_THRESHOLD:
+        decision = "CONTINUE"
     else:
-        full_reasoning = f"{base_reasoning}. Recommend {predicted_rounds} rounds."
+        decision = "STOP"
 
-    # Format probabilities
-    class_probs = {
-        "early_r1_r2": float(y_proba[0]),
-        "medium_r3_r4": float(y_proba[1]),
-        "late_r5": float(y_proba[2])
-    }
+    next_action = _next_action(
+        state.round,
+        decision,
+    )
+
+    missing_features = [
+        feature
+        for feature in FROZEN_FEATURES
+        if pd.isna(
+            X.iloc[0][feature]
+        )
+    ]
 
     return Decision(
-        sample_id=metrics.sample_id,
-        recommended_rounds=predicted_rounds,
-        confidence=confidence,
-        reasoning=full_reasoning,
-        warnings=warnings_list,
-        rule_overrides=rule_overrides,
-        model_version=model_version,
-        class_probabilities=class_probs
+        sample_id=state.sample_id,
+        round=state.round,
+        p_continue=p_continue,
+        threshold=DECISION_THRESHOLD,
+        decision=decision,
+        next_action=next_action,
+        model_version=MODEL_VERSION,
+        model_sha256=model_sha,
+        feature_schema_sha256=FEATURE_SCHEMA_SHA256,
+        missing_features=missing_features,
     )
 
 
-# ============================================================
-# CLI for testing
-# ============================================================
+# =============================================================================
+# MODEL INFORMATION
+# =============================================================================
+
+def model_info(
+    model_path: str | Path = DEFAULT_MODEL_PATH,
+    verify_model_sha256: bool = True,
+) -> Dict[str, Any]:
+    """
+    Return frozen controller metadata.
+
+    Useful for FastAPI /model/info and reproducibility audits.
+    """
+
+    estimator, model_sha = load_frozen_model(
+        str(
+            Path(model_path)
+            .expanduser()
+            .resolve()
+        ),
+        verify_model_sha256,
+    )
+
+    model_type = type(
+        estimator
+    ).__name__
+
+    if hasattr(
+        estimator,
+        "named_steps",
+    ):
+        final_estimator = list(
+            estimator.named_steps.values()
+        )[-1]
+
+        model_type = type(
+            final_estimator
+        ).__name__
+
+    return {
+        "model_version":
+            MODEL_VERSION,
+        "model_type":
+            model_type,
+        "decision_threshold":
+            DECISION_THRESHOLD,
+        "legal_decision_rounds":
+            list(LEGAL_DECISION_ROUNDS),
+        "maximum_racon_round":
+            MAX_RACON_ROUND,
+        "feature_count":
+            len(FROZEN_FEATURES),
+        "features":
+            list(FROZEN_FEATURES),
+        "feature_schema_sha256":
+            FEATURE_SCHEMA_SHA256,
+        "model_sha256":
+            model_sha,
+        "model_path":
+            str(
+                Path(model_path)
+                .expanduser()
+                .resolve()
+            ),
+    }
+
+
+# =============================================================================
+# SIMPLE CLI SMOKE TEST
+# =============================================================================
+
 if __name__ == "__main__":
-    print("=" * 60)
-    print("ESDP Decision Logic - Example Usage")
-    print("=" * 60)
 
-    # Example 1: Excellent R1 quality
-    print("\nExample 1: Excellent R1 quality")
-    print("-" * 60)
-    metrics1 = PolishingMetrics(
-        sample_id="sample_001",
-        genus="Escherichia",
-        round=1,
-        coverage=50.0,
-        coverage_effective=48.0,
-        n50=4500000,
-        qv=35.2,
-        error_rate=0.0003,
-        busco_complete=95.5,
-        num_contigs=1,
-        total_length=4800000
+    import argparse
+    import json
+
+    parser = argparse.ArgumentParser(
+        description=(
+            "Run one ESDP sequential STOP/CONTINUE decision."
+        )
     )
-    decision1 = decide(metrics1)
-    print(f"Sample: {decision1.sample_id}")
-    print(f"Recommended rounds: {decision1.recommended_rounds}")
-    print(f"Confidence: {decision1.confidence:.3f}")
-    print(f"Reasoning: {decision1.reasoning}")
-    print(f"Warnings: {decision1.warnings}")
-    print(f"Rule overrides: {decision1.rule_overrides}")
 
-    # Example 2: Poor R1 quality (low confidence)
-    print("\nExample 2: Poor R1 quality (low confidence)")
-    print("-" * 60)
-    metrics2 = PolishingMetrics(
-        sample_id="sample_002",
-        genus="Salmonella",
-        round=1,
-        coverage=30.0,
-        coverage_effective=28.0,
-        n50=2000000,
-        qv=28.5,
-        error_rate=0.0015,
-        busco_complete=85.0,
-        num_contigs=5,
-        total_length=4900000
+    parser.add_argument(
+        "--sample-id",
+        required=True,
     )
-    decision2 = decide(metrics2)
-    print(f"Sample: {decision2.sample_id}")
-    print(f"Recommended rounds: {decision2.recommended_rounds}")
-    print(f"Confidence: {decision2.confidence:.3f}")
-    print(f"Reasoning: {decision2.reasoning}")
-    print(f"Warnings: {decision2.warnings}")
-    print(f"Rule overrides: {decision2.rule_overrides}")
 
-    # Example 3: Conservative mode
-    print("\nExample 3: Conservative mode (force_conservative=True)")
-    print("-" * 60)
-    decision3 = decide(metrics1, force_conservative=True)
-    print(f"Sample: {decision3.sample_id}")
-    print(f"Recommended rounds: {decision3.recommended_rounds}")
-    print(f"Confidence: {decision3.confidence:.3f}")
-    print(f"Reasoning: {decision3.reasoning}")
-    print(f"Warnings: {decision3.warnings}")
-    print(f"Rule overrides: {decision3.rule_overrides}")
+    parser.add_argument(
+        "--round",
+        required=True,
+        type=int,
+        choices=LEGAL_DECISION_ROUNDS,
+    )
 
-    # Example 4: Custom confidence threshold
-    print("\nExample 4: Custom confidence threshold (0.6)")
-    print("-" * 60)
-    decision4 = decide(metrics2, confidence_threshold=0.6)
-    print(f"Sample: {decision4.sample_id}")
-    print(f"Recommended rounds: {decision4.recommended_rounds}")
-    print(f"Confidence: {decision4.confidence:.3f}")
-    print(f"Reasoning: {decision4.reasoning}")
-    print(f"Warnings: {decision4.warnings}")
-    print(f"Rule overrides: {decision4.rule_overrides}")
+    parser.add_argument(
+        "--coverage-est",
+        type=float,
+        required=True,
+    )
 
-    print("\n" + "=" * 60)
-    print("Examples completed successfully!")
-    print("=" * 60)
+    parser.add_argument(
+        "--expected-genome-size",
+        type=float,
+        required=True,
+    )
+
+    parser.add_argument(
+        "--raw-read-n50",
+        type=float,
+        required=True,
+    )
+
+    parser.add_argument(
+        "--ai-cov-cv",
+        type=float,
+        required=True,
+    )
+
+    parser.add_argument(
+        "--current-n50",
+        type=float,
+        required=True,
+    )
+
+    parser.add_argument(
+        "--current-num-contigs",
+        type=float,
+        required=True,
+    )
+
+    parser.add_argument(
+        "--current-assembly-frac",
+        type=float,
+        required=True,
+    )
+
+    parser.add_argument(
+        "--delta-n50-last",
+        type=float,
+        default=None,
+    )
+
+    parser.add_argument(
+        "--n50-from-r1",
+        type=float,
+        default=None,
+    )
+
+    parser.add_argument(
+        "--model",
+        type=Path,
+        default=DEFAULT_MODEL_PATH,
+    )
+
+    parser.add_argument(
+        "--skip-sha-check",
+        action="store_true",
+        help=(
+            "Disable frozen model SHA256 verification. "
+            "Intended only for development/testing."
+        ),
+    )
+
+    args = parser.parse_args()
+
+    state = PolishingState(
+        sample_id=args.sample_id,
+        round=args.round,
+        coverage_est=args.coverage_est,
+        expected_genome_size=args.expected_genome_size,
+        raw_read_n50=args.raw_read_n50,
+        ai_cov_cv=args.ai_cov_cv,
+        current_n50=args.current_n50,
+        current_num_contigs=args.current_num_contigs,
+        current_assembly_frac=args.current_assembly_frac,
+        delta_n50_last=args.delta_n50_last,
+        n50_from_R1=args.n50_from_r1,
+    )
+
+    result = decide(
+        state,
+        model_path=args.model,
+        verify_model_sha256=(
+            not args.skip_sha_check
+        ),
+    )
+
+    print(
+        json.dumps(
+            result.to_dict(),
+            indent=2,
+        )
+    )
